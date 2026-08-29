@@ -24,3 +24,11 @@ Migration پایه در `db/001_identity.sql` قرار دارد و جداول `t
 آداپتور `PostgresIdentityRepository` در `src/infrastructure/postgres-identity-repository.js` از Queryهای پارامتری استفاده می‌کند و برای تست‌پذیری به هر کلاینت سازگار با متد `query` وابسته است.
 
 معماری فعلی یک Modular Monolith است. اتصال واقعی به PostgreSQL، Pool مدیریت اتصال و احراز هویت OIDC/SAML در مراحل بعدی به‌عنوان آداپتورهای زیرساختی اضافه خواهد شد.
+
+برای اجرای PostgreSQL توسعه، ابتدا Docker Desktop را اجرا کنید و سپس بزنید:
+
+```powershell
+npm.cmd run db:up
+```
+
+در زمان توسعه‌ی فعلی، Docker daemon روی سیستم در دسترس نبود؛ بنابراین اجرای کانتینر به مرحله‌ی بعد موکول شد.
