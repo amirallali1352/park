@@ -6,6 +6,7 @@ import {
   createUser
 } from "../domain/identity.js";
 import { InMemoryIdentityRepository } from "../infrastructure/in-memory-identity-repository.js";
+import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -27,6 +28,9 @@ async function readJson(request) {
 }
 
 function errorResponse(error) {
+  if (error instanceof AuthError) {
+    return { status: 401, body: { error: { code: error.code, message: error.message } } };
+  }
   if (error instanceof IdentityError) {
     const status = error.code === "TENANT_ACCESS_DENIED" ? 403 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
@@ -37,11 +41,22 @@ function errorResponse(error) {
   };
 }
 
-export function createApiServer(repository = new InMemoryIdentityRepository()) {
+export function createApiServer(
+  repository = new InMemoryIdentityRepository(),
+  { authRequired = false, authSecret = process.env.AUTH_SECRET } = {}
+) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
       const method = request.method ?? "GET";
+      const protectedRoute = url.pathname.startsWith("/api/v1/");
+      let claims = null;
+
+      if (authRequired && protectedRoute) {
+        const token = bearerToken(request);
+        if (!token) throw new AuthError("Bearer access token is required.", "AUTH_REQUIRED");
+        claims = verifyAccessToken(token, { secret: authSecret });
+      }
 
       if (method === "GET" && url.pathname === "/health") {
         return sendJson(response, 200, { status: "ok", service: "stp-os" });
@@ -60,13 +75,18 @@ export function createApiServer(repository = new InMemoryIdentityRepository()) {
             error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
           });
         }
+        if (claims) assertTenantAccess(claims, tenantId);
         const user = createUser({ ...(await readJson(request)), tenantId });
         await repository.saveUser(user);
         return sendJson(response, 201, user);
       }
 
       if (url.pathname === "/api/v1/users" && method === "GET") {
-        const tenantId = request.headers["x-tenant-id"];
+        const requestedTenantId = request.headers["x-tenant-id"];
+        if (claims && requestedTenantId && requestedTenantId !== claims.tenantId) {
+          assertTenantAccess(claims, requestedTenantId);
+        }
+        const tenantId = claims?.tenantId ?? requestedTenantId;
         if (!tenantId) {
           return sendJson(response, 401, {
             error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
