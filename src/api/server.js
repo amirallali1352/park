@@ -6,6 +6,8 @@ import {
   createUser
 } from "../domain/identity.js";
 import { InMemoryIdentityRepository } from "../infrastructure/in-memory-identity-repository.js";
+import { InMemoryFacilityRepository } from "../infrastructure/in-memory-facility-repository.js";
+import { FacilityError, createBooking, createEquipment } from "../domain/facility.js";
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 
 function sendJson(response, status, body) {
@@ -35,6 +37,10 @@ function errorResponse(error) {
     const status = ["TENANT_ACCESS_DENIED", "FORBIDDEN"].includes(error.code) ? 403 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof FacilityError) {
+    const status = error.code === "BOOKING_CONFLICT" ? 409 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -47,7 +53,8 @@ export function createApiServer(
     authRequired = false,
     authSecret = process.env.AUTH_SECRET,
     authIssuer = process.env.AUTH_ISSUER,
-    authAudience = process.env.AUTH_AUDIENCE
+    authAudience = process.env.AUTH_AUDIENCE,
+    facilityRepository = new InMemoryFacilityRepository()
   } = {}
 ) {
   return createServer(async (request, response) => {
@@ -106,6 +113,55 @@ export function createApiServer(
         }
         const users = await repository.listUsers({ tenantId }, tenantId);
         return sendJson(response, 200, users);
+      }
+
+      if (url.pathname === "/api/v1/equipment" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) {
+          return sendJson(response, 401, {
+            error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+          });
+        }
+        const equipment = createEquipment({ ...(await readJson(request)), tenantId });
+        await facilityRepository.saveEquipment(equipment);
+        return sendJson(response, 201, equipment);
+      }
+
+      if (url.pathname === "/api/v1/equipment" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) {
+          return sendJson(response, 401, {
+            error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+          });
+        }
+        return sendJson(response, 200, await facilityRepository.listEquipment(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/bookings" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) {
+          return sendJson(response, 401, {
+            error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+          });
+        }
+        const payload = await readJson(request);
+        const booking = createBooking({
+          ...payload,
+          tenantId,
+          userId: claims?.sub ?? payload.userId
+        });
+        await facilityRepository.saveBooking(booking);
+        return sendJson(response, 201, booking);
+      }
+
+      if (url.pathname === "/api/v1/bookings" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) {
+          return sendJson(response, 401, {
+            error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+          });
+        }
+        return sendJson(response, 200, await facilityRepository.listBookings(tenantId));
       }
 
       return sendJson(response, 404, {

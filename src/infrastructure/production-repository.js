@@ -1,5 +1,6 @@
 import pg from "pg";
 import { PostgresIdentityRepository } from "./postgres-identity-repository.js";
+import { PostgresFacilityRepository } from "./postgres-facility-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
 
 export function createProductionRepository({
@@ -7,5 +8,8 @@ export function createProductionRepository({
   Pool = pg.Pool
 } = {}) {
   const pool = createPostgresPool({ Pool, connectionString: databaseUrl });
-  return new PostgresIdentityRepository(pool);
+  return {
+    identity: new PostgresIdentityRepository(pool),
+    facility: new PostgresFacilityRepository(pool)
+  };
 }

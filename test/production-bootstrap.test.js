@@ -17,7 +17,8 @@ test("creates a PostgreSQL-backed repository from DATABASE_URL", async () => {
     Pool: FakePool
   });
 
-  assert.equal(repository.constructor.name, "PostgresIdentityRepository");
+  assert.equal(repository.identity.constructor.name, "PostgresIdentityRepository");
+  assert.equal(repository.facility.constructor.name, "PostgresFacilityRepository");
   assert.deepEqual(poolOptions, {
     connectionString: "postgres://stp_os:change-me@localhost:5432/stp_os",
     max: 10
