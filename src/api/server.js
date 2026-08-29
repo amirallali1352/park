@@ -32,7 +32,7 @@ function errorResponse(error) {
     return { status: 401, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof IdentityError) {
-    const status = error.code === "TENANT_ACCESS_DENIED" ? 403 : 400;
+    const status = ["TENANT_ACCESS_DENIED", "FORBIDDEN"].includes(error.code) ? 403 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   return {
@@ -43,7 +43,12 @@ function errorResponse(error) {
 
 export function createApiServer(
   repository = new InMemoryIdentityRepository(),
-  { authRequired = false, authSecret = process.env.AUTH_SECRET } = {}
+  {
+    authRequired = false,
+    authSecret = process.env.AUTH_SECRET,
+    authIssuer = process.env.AUTH_ISSUER,
+    authAudience = process.env.AUTH_AUDIENCE
+  } = {}
 ) {
   return createServer(async (request, response) => {
     try {
@@ -55,7 +60,11 @@ export function createApiServer(
       if (authRequired && protectedRoute) {
         const token = bearerToken(request);
         if (!token) throw new AuthError("Bearer access token is required.", "AUTH_REQUIRED");
-        claims = verifyAccessToken(token, { secret: authSecret });
+        claims = verifyAccessToken(token, {
+          secret: authSecret,
+          issuer: authIssuer,
+          audience: authAudience
+        });
       }
 
       if (method === "GET" && url.pathname === "/health") {
@@ -63,6 +72,9 @@ export function createApiServer(
       }
 
       if (url.pathname === "/api/v1/tenants" && method === "POST") {
+        if (authRequired && claims?.role !== "park_admin") {
+          throw new IdentityError("Park administrator role is required.", "FORBIDDEN");
+        }
         const tenant = createTenant(await readJson(request));
         await repository.saveTenant(tenant);
         return sendJson(response, 201, tenant);

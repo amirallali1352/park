@@ -55,6 +55,8 @@ npm.cmd start
 ```powershell
 $env:AUTH_REQUIRED = "true"
 $env:AUTH_SECRET = "یک-رشته-تصادفی-طولانی"
+$env:AUTH_ISSUER = "https://identity.example.com/"
+$env:AUTH_AUDIENCE = "stp-os-api"
 ```
 
-در این حالت، Tenant از Claim به نام `tenantId` در JWT استخراج می‌شود و اگر هدر `x-tenant-id` ارسال شود، با آن تطبیق داده خواهد شد. توکن‌های نامعتبر، منقضی یا دارای امضای اشتباه رد می‌شوند. پیاده‌سازی فعلی HS256 برای محیط توسعه است؛ اتصال به OIDC/SAML و JWKS در مرحله‌ی سخت‌سازی امنیتی اضافه خواهد شد.
+در این حالت، Tenant از Claim به نام `tenantId` در JWT استخراج می‌شود و اگر هدر `x-tenant-id` ارسال شود، با آن تطبیق داده خواهد شد. توکن‌های نامعتبر، منقضی یا دارای امضای اشتباه رد می‌شوند. در صورت تنظیم `AUTH_ISSUER` و `AUTH_AUDIENCE`، Claimهای `iss` و `aud` نیز اعتبارسنجی می‌شوند. پیاده‌سازی فعلی HS256 برای محیط توسعه است؛ اتصال به OIDC/SAML و JWKS در مرحله‌ی سخت‌سازی امنیتی اضافه خواهد شد.

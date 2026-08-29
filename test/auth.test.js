@@ -25,3 +25,20 @@ test("rejects expired tokens", () => {
   );
   assert.throws(() => verifyAccessToken(token, { secret: "test-secret", now: 111 }), /expired/);
 });
+
+test("validates OIDC issuer and audience claims", () => {
+  const token = createAccessToken(
+    { sub: "user-1", tenantId: "park-1", iss: "https://issuer.test", aud: "stp-os-api" },
+    { secret: "test-secret" }
+  );
+  assert.doesNotThrow(() => verifyAccessToken(token, {
+    secret: "test-secret",
+    issuer: "https://issuer.test",
+    audience: "stp-os-api"
+  }));
+  assert.throws(() => verifyAccessToken(token, {
+    secret: "test-secret",
+    issuer: "https://wrong-issuer.test",
+    audience: "stp-os-api"
+  }), /issuer/);
+});

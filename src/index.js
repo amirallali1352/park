@@ -8,7 +8,9 @@ const repository = process.env.DATABASE_URL
   : undefined;
 const server = createApiServer(repository, {
   authRequired,
-  authSecret: process.env.AUTH_SECRET
+  authSecret: process.env.AUTH_SECRET,
+  authIssuer: process.env.AUTH_ISSUER,
+  authAudience: process.env.AUTH_AUDIENCE
 });
 server.listen(port, "0.0.0.0", () => {
   console.log(

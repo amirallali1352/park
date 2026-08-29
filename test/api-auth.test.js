@@ -44,3 +44,24 @@ test("derives tenant context from the token and rejects header spoofing", async 
     });
   });
 });
+
+test("allows only park admins to create tenants when auth is enabled", async () => {
+  await withAuthServer(async (baseUrl) => {
+    const token = createAccessToken(
+      { sub: "user-1", tenantId: "park-1", role: "member" },
+      { secret: "test-secret" }
+    );
+    const response = await fetch(`${baseUrl}/api/v1/tenants`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ id: "new-park", name: "New Park", type: "park" })
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: { code: "FORBIDDEN", message: "Park administrator role is required." }
+    });
+  });
+});

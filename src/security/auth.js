@@ -27,7 +27,10 @@ export function createAccessToken(
   return `${input}.${sign(input, secret)}`;
 }
 
-export function verifyAccessToken(token, { secret, now = Math.floor(Date.now() / 1000) } = {}) {
+export function verifyAccessToken(
+  token,
+  { secret, issuer, audience, now = Math.floor(Date.now() / 1000) } = {}
+) {
   if (!secret) throw new Error("AUTH_SECRET is required.");
   const parts = typeof token === "string" ? token.split(".") : [];
   if (parts.length !== 3) throw new AuthError("Invalid access token.");
@@ -54,6 +57,15 @@ export function verifyAccessToken(token, { secret, now = Math.floor(Date.now() /
   }
   if (!payload.sub || !payload.tenantId || !Number.isInteger(payload.exp) || payload.exp <= now) {
     throw new AuthError("Access token is expired or incomplete.", "ACCESS_TOKEN_EXPIRED");
+  }
+  if (issuer && payload.iss !== issuer) {
+    throw new AuthError("Access token issuer is invalid.", "INVALID_TOKEN_ISSUER");
+  }
+  if (
+    audience &&
+    !(payload.aud === audience || (Array.isArray(payload.aud) && payload.aud.includes(audience)))
+  ) {
+    throw new AuthError("Access token audience is invalid.", "INVALID_TOKEN_AUDIENCE");
   }
   return payload;
 }
