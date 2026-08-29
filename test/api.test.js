@@ -82,3 +82,24 @@ test("denies user access when tenant context is missing", async () => {
     });
   });
 });
+
+test("awaits asynchronous repository reads", async () => {
+  const server = createApiServer({
+    async listUsers() {
+      return [{ id: "async-user", tenantId: "park-1", email: "async@test.local", role: "member" }];
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  try {
+    const response = await fetch(`http://${address.address}:${address.port}/api/v1/users`, {
+      headers: { "x-tenant-id": "park-1" }
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), [
+      { id: "async-user", tenantId: "park-1", email: "async@test.local", role: "member" }
+    ]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

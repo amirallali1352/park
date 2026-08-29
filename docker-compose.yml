@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: stp_os
       POSTGRES_PASSWORD: change-me
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - stp-postgres-data:/var/lib/postgresql/data
       - ./db:/docker-entrypoint-initdb.d:ro

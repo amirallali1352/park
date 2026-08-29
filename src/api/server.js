@@ -49,7 +49,7 @@ export function createApiServer(repository = new InMemoryIdentityRepository()) {
 
       if (url.pathname === "/api/v1/tenants" && method === "POST") {
         const tenant = createTenant(await readJson(request));
-        repository.saveTenant(tenant);
+        await repository.saveTenant(tenant);
         return sendJson(response, 201, tenant);
       }
 
@@ -61,7 +61,7 @@ export function createApiServer(repository = new InMemoryIdentityRepository()) {
           });
         }
         const user = createUser({ ...(await readJson(request)), tenantId });
-        repository.saveUser(user);
+        await repository.saveUser(user);
         return sendJson(response, 201, user);
       }
 
@@ -72,7 +72,7 @@ export function createApiServer(repository = new InMemoryIdentityRepository()) {
             error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
           });
         }
-        const users = repository.listUsers({ tenantId }, tenantId);
+        const users = await repository.listUsers({ tenantId }, tenantId);
         return sendJson(response, 200, users);
       }
 

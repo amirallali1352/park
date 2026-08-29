@@ -12,7 +12,7 @@ function mockClient() {
       if (text.includes("INSERT INTO tenants")) return { rows: [{ id: values[0], name: values[1], type: values[2] }] };
       if (text.includes("INSERT INTO users")) return { rows: [{ id: values[0], tenant_id: values[1], email: values[2], role: values[3] }] };
       if (text.includes("SELECT id, tenant_id, email, role")) {
-        return { rows: [{ id: "u1", tenant_id: values[0], email: "u@test.local", role: "member" }] };
+        return { rows: [{ id: "u1", tenant_id: "park-1", email: "u@test.local", role: "member" }] };
       }
       return { rows: [] };
     }
@@ -41,8 +41,10 @@ test("persists users with a tenant boundary", async () => {
   const result = await repository.saveUser(user);
 
   assert.deepEqual(result, user);
-  assert.match(client.calls[0].text, /INSERT INTO users \(id, tenant_id, email, role\)/);
-  assert.deepEqual(client.calls[0].values, ["u1", "park-1", "u@test.local", "member"]);
+  assert.equal(client.calls[0].text, "SELECT set_config('app.tenant_id', $1, true)");
+  assert.deepEqual(client.calls[0].values, ["park-1"]);
+  assert.match(client.calls[1].text, /INSERT INTO users \(id, tenant_id, email, role\)/);
+  assert.deepEqual(client.calls[1].values, ["u1", "park-1", "u@test.local", "member"]);
 });
 
 test("sets the database tenant context before reading users", async () => {
@@ -54,5 +56,6 @@ test("sets the database tenant context before reading users", async () => {
   assert.deepEqual(users, [{ id: "u1", tenantId: "park-1", email: "u@test.local", role: "member" }]);
   assert.equal(client.calls[0].text, "SELECT set_config('app.tenant_id', $1, true)");
   assert.deepEqual(client.calls[0].values, ["park-1"]);
-  assert.match(client.calls[1].text, /SELECT id, tenant_id, email, role FROM users/);
+  assert.match(client.calls[1].text, /SELECT id, tenant_id, email, role FROM users WHERE tenant_id = \$1/);
+  assert.deepEqual(client.calls[1].values, ["park-1"]);
 });
