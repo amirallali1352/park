@@ -3,6 +3,8 @@ import { createProductionRepository } from "./infrastructure/production-reposito
 import { createObjectStorage } from "./infrastructure/create-object-storage.js";
 import { EncryptedFileService } from "./security/encrypted-file-service.js";
 import { EnvelopeEncryption } from "./security/encryption.js";
+import { LocalEmbeddingProvider } from "./search/embedding.js";
+import { createVectorSearch } from "./search/create-vector-search.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const authRequired = process.env.AUTH_REQUIRED === "true";
@@ -20,6 +22,12 @@ const fileService = objectStorage && process.env.ENCRYPTION_KEK
     metadataRepository: repositories?.fileMetadata
   })
   : undefined;
+const embeddingProvider = process.env.OPENSEARCH_NODE
+  ? new LocalEmbeddingProvider({ dimensions: Number(process.env.EMBEDDING_DIMENSIONS ?? 64) })
+  : undefined;
+const vectorIndex = process.env.OPENSEARCH_NODE
+  ? createVectorSearch()
+  : undefined;
 const server = createApiServer(repositories?.identity, {
   authRequired,
   authSecret: process.env.AUTH_SECRET,
@@ -32,6 +40,8 @@ const server = createApiServer(repositories?.identity, {
   legalRepository: repositories?.legal,
   marketplaceRepository: repositories?.marketplace,
   consortiumRepository: repositories?.consortium,
+  embeddingProvider,
+  vectorIndex,
   fileService,
   requireLegalWrapper: process.env.REQUIRE_LEGAL_WRAPPER === "true",
   encryptionKek: process.env.ENCRYPTION_KEK

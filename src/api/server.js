@@ -28,6 +28,7 @@ import { InMemoryMarketplaceRepository } from "../infrastructure/in-memory-marke
 import { rankListings } from "../domain/matching.js";
 import { ConsortiumError, createConsortium } from "../domain/consortium.js";
 import { InMemoryConsortiumRepository } from "../infrastructure/in-memory-consortium-repository.js";
+import { EmbeddingError } from "../search/embedding.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -91,6 +92,9 @@ function errorResponse(error) {
   if (error instanceof ConsortiumError) {
     return { status: 400, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof EmbeddingError) {
+    return { status: 400, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -114,6 +118,8 @@ export function createApiServer(
     signatureProvider = null,
     marketplaceRepository = new InMemoryMarketplaceRepository(),
     consortiumRepository = new InMemoryConsortiumRepository(),
+    embeddingProvider = null,
+    vectorIndex = null,
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -431,6 +437,15 @@ export function createApiServer(
         });
         const listing = createListing({ ...(await readJson(request)), tenantId });
         await marketplaceRepository.save(listing);
+        if (embeddingProvider && vectorIndex?.indexListing) {
+          const text = [
+            listing.title, listing.summary, ...(listing.capabilities ?? []), ...(listing.tags ?? [])
+          ].filter(Boolean).join(" ");
+          await vectorIndex.indexListing({
+            ...listing,
+            embedding: await embeddingProvider.embed(text)
+          });
+        }
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
           action: "marketplace.listing.created", resourceType: "listing", resourceId: listing.id,
@@ -457,6 +472,14 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         const requestListing = await readJson(request);
+        if (embeddingProvider && vectorIndex) {
+          const text = [
+            requestListing.title, requestListing.summary,
+            ...(requestListing.capabilities ?? []), ...(requestListing.tags ?? [])
+          ].filter(Boolean).join(" ");
+          const embedding = await embeddingProvider.embed(text);
+          return sendJson(response, 200, await vectorIndex.search({ tenantId, embedding, k: 10 }));
+        }
         const candidates = typeof marketplaceRepository.discover === "function"
           ? await marketplaceRepository.discover({ status: "open" })
           : await marketplaceRepository.list(tenantId, { status: "open" });

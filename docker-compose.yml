@@ -56,6 +56,18 @@ services:
     volumes:
       - stp-minio-data:/data
 
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - stp-opensearch-data:/usr/share/opensearch/data
+
 volumes:
   stp-postgres-data:
   stp-minio-data:
+  stp-opensearch-data:
