@@ -29,6 +29,7 @@ import { rankListings } from "../domain/matching.js";
 import { ConsortiumError, createConsortium } from "../domain/consortium.js";
 import { InMemoryConsortiumRepository } from "../infrastructure/in-memory-consortium-repository.js";
 import { EmbeddingError } from "../search/embedding.js";
+import { AnalyticsAggregator } from "../analytics/aggregator.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -120,6 +121,8 @@ export function createApiServer(
     consortiumRepository = new InMemoryConsortiumRepository(),
     embeddingProvider = null,
     vectorIndex = null,
+    analytics = new AnalyticsAggregator(),
+    analyticsSink = null,
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -146,6 +149,14 @@ export function createApiServer(
 
       if (method === "GET" && url.pathname === "/health") {
         return sendJson(response, 200, { status: "ok", service: "stp-os" });
+      }
+
+      if (url.pathname === "/api/v1/analytics/kpis" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, analytics.snapshot(tenantId));
       }
 
       if (url.pathname === "/api/v1/tenants" && method === "POST") {
@@ -235,6 +246,16 @@ export function createApiServer(
           id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
           aggregateId: booking.id, payload: booking
         }));
+        const analyticsEvent = {
+          id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
+          occurredAt: booking.createdAt, payload: {
+            equipmentId: booking.equipmentId,
+            durationMinutes: (new Date(booking.endAt) - new Date(booking.startAt)) / 60000,
+            amount: booking.amount ?? 0
+          }
+        };
+        analytics.consume(analyticsEvent);
+        if (analyticsSink) await analyticsSink.write(analyticsEvent);
         return sendJson(response, 201, booking);
       }
 

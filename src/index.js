@@ -5,6 +5,7 @@ import { EncryptedFileService } from "./security/encrypted-file-service.js";
 import { EnvelopeEncryption } from "./security/encryption.js";
 import { LocalEmbeddingProvider } from "./search/embedding.js";
 import { createVectorSearch } from "./search/create-vector-search.js";
+import { createClickHouseSink } from "./analytics/create-clickhouse-sink.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const authRequired = process.env.AUTH_REQUIRED === "true";
@@ -28,6 +29,9 @@ const embeddingProvider = process.env.OPENSEARCH_NODE
 const vectorIndex = process.env.OPENSEARCH_NODE
   ? createVectorSearch()
   : undefined;
+const analyticsSink = process.env.CLICKHOUSE_URL
+  ? createClickHouseSink()
+  : undefined;
 const server = createApiServer(repositories?.identity, {
   authRequired,
   authSecret: process.env.AUTH_SECRET,
@@ -42,6 +46,7 @@ const server = createApiServer(repositories?.identity, {
   consortiumRepository: repositories?.consortium,
   embeddingProvider,
   vectorIndex,
+  analyticsSink,
   fileService,
   requireLegalWrapper: process.env.REQUIRE_LEGAL_WRAPPER === "true",
   encryptionKek: process.env.ENCRYPTION_KEK

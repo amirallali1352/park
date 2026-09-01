@@ -67,7 +67,17 @@ services:
     volumes:
       - stp-opensearch-data:/usr/share/opensearch/data
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    volumes:
+      - stp-clickhouse-data:/var/lib/clickhouse
+      - ./db/clickhouse:/docker-entrypoint-initdb.d:ro
+
 volumes:
   stp-postgres-data:
   stp-minio-data:
   stp-opensearch-data:
+  stp-clickhouse-data:
