@@ -16,6 +16,7 @@ import { InMemoryOutboxRepository } from "../infrastructure/in-memory-outbox-rep
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 import { AuditError, createAuditEvent } from "../security/audit.js";
 import { InMemoryAuditRepository } from "../infrastructure/in-memory-audit-repository.js";
+import { buildMerkleProof, merkleRoot } from "../security/merkle.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -142,6 +143,11 @@ export function createApiServer(
         }
         const equipment = createEquipment({ ...(await readJson(request)), tenantId });
         await facilityRepository.saveEquipment(equipment);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "equipment.created", resourceType: "equipment", resourceId: equipment.id,
+          payload: equipment
+        }));
         return sendJson(response, 201, equipment);
       }
 
@@ -285,6 +291,21 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         return sendJson(response, 200, await auditRepository.list(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/audit/proof" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const events = await auditRepository.list(tenantId);
+        const hashes = events.map((event) => event.hash);
+        const index = Math.max(0, hashes.length - 1);
+        return sendJson(response, 200, {
+          event: events[index] ?? null,
+          root: merkleRoot(hashes),
+          proof: events[index] ? buildMerkleProof(hashes, index) : []
+        });
       }
 
       return sendJson(response, 404, {

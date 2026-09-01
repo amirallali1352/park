@@ -29,8 +29,11 @@ test("records a hash-chained audit event for a booking", async () => {
     });
     assert.equal(response.status, 200);
     const events = await response.json();
-    assert.equal(events.at(-1).action, "booking.created");
-    assert.equal(events.at(-1).previousHash, null);
+    assert.equal(events.some((event) => event.action === "booking.created"), true);
+    assert.equal(events[0].action, "equipment.created");
+    assert.equal(events[0].previousHash, null);
+    assert.equal(events[1].action, "booking.created");
+    assert.equal(events[1].previousHash, events[0].hash);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
