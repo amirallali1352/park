@@ -13,7 +13,8 @@ const server = createApiServer(repositories?.identity, {
   authAudience: process.env.AUTH_AUDIENCE,
   facilityRepository: repositories?.facility,
   sampleRepository: repositories?.samples,
-  outboxRepository: repositories?.outbox
+  outboxRepository: repositories?.outbox,
+  auditRepository: repositories?.audit
 });
 server.listen(port, "0.0.0.0", () => {
   console.log(

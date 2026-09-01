@@ -14,6 +14,8 @@ import { InMemorySampleRepository } from "../infrastructure/in-memory-sample-rep
 import { createDomainEvent, DomainEventType } from "../domain/outbox.js";
 import { InMemoryOutboxRepository } from "../infrastructure/in-memory-outbox-repository.js";
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
+import { AuditError, createAuditEvent } from "../security/audit.js";
+import { InMemoryAuditRepository } from "../infrastructure/in-memory-audit-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -51,6 +53,9 @@ function errorResponse(error) {
       error.code === "SAMPLE_ACCESS_DENIED" ? 403 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof AuditError) {
+    return { status: 500, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -66,7 +71,8 @@ export function createApiServer(
     authAudience = process.env.AUTH_AUDIENCE,
     facilityRepository = new InMemoryFacilityRepository(),
     sampleRepository = new InMemorySampleRepository(),
-    outboxRepository = new InMemoryOutboxRepository()
+    outboxRepository = new InMemoryOutboxRepository(),
+    auditRepository = new InMemoryAuditRepository()
   } = {}
 ) {
   return createServer(async (request, response) => {
@@ -163,6 +169,11 @@ export function createApiServer(
           userId: claims?.sub ?? payload.userId
         });
         await facilityRepository.saveBooking(booking);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? booking.userId,
+          action: "booking.created", resourceType: "booking", resourceId: booking.id,
+          payload: booking
+        }));
         await outboxRepository.save(createDomainEvent({
           id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
           aggregateId: booking.id, payload: booking
@@ -192,6 +203,11 @@ export function createApiServer(
           tenantId
         });
         await facilityRepository.saveMaintenance(window);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "maintenance.scheduled", resourceType: "maintenance", resourceId: window.id,
+          payload: window
+        }));
         await outboxRepository.save(createDomainEvent({
           id: randomUUID(), tenantId, type: DomainEventType.MAINTENANCE_SCHEDULED,
           aggregateId: window.id, payload: window
@@ -241,6 +257,11 @@ export function createApiServer(
         });
         await sampleRepository.saveCustodyEvent(event);
         if (event.action === "received") {
+          await auditRepository.append(createAuditEvent({
+            id: randomUUID(), tenantId, actorId: claims?.sub ?? event.actorId,
+            action: "sample.received", resourceType: "sample", resourceId: event.sampleId,
+            payload: event
+          }));
           await outboxRepository.save(createDomainEvent({
             id: randomUUID(), tenantId, type: DomainEventType.SAMPLE_RECEIVED,
             aggregateId: event.sampleId, payload: event
@@ -256,6 +277,14 @@ export function createApiServer(
         });
         return sendJson(response, 200,
           await sampleRepository.listCustodyEvents(tenantId, custodyMatch[1]));
+      }
+
+      if (url.pathname === "/api/v1/audit" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await auditRepository.list(tenantId));
       }
 
       return sendJson(response, 404, {
