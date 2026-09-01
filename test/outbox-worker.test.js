@@ -28,6 +28,32 @@ test("publishes pending events and marks them published", async () => {
   assert.deepEqual(bus.messages.map((message) => message.type), ["BookingConfirmed"]);
 });
 
+test("projects published events to analytics before marking them published", async () => {
+  const calls = [];
+  const worker = new OutboxWorker({
+    outboxRepository: {
+      async listPending() {
+        return [{ id: "event-1", tenantId: "park-1", type: "BookingConfirmed" }];
+      },
+      async markPublished(id) {
+        calls.push(`published:${id}`);
+      }
+    },
+    eventBus: {
+      async publish() {
+        calls.push("bus");
+      }
+    },
+    analyticsSink: {
+      async write(event) {
+        calls.push(`analytics:${event.id}`);
+      }
+    }
+  });
+  assert.deepEqual(await worker.runOnce(), { scanned: 1, published: 1, failed: 0 });
+  assert.deepEqual(calls, ["bus", "analytics:event-1", "published:event-1"]);
+});
+
 test("leaves events pending when publishing fails", async () => {
   const outbox = new InMemoryOutboxRepository();
   const bus = { async publish() { throw new Error("broker unavailable"); } };

@@ -5,6 +5,7 @@ import { RedpandaEventBus } from "./infrastructure/redpanda-event-bus.js";
 import { OutboxWorker } from "./infrastructure/outbox-worker.js";
 import { runMigrations } from "./infrastructure/postgres-client.js";
 import { loadMigrations } from "./infrastructure/load-migrations.js";
+import { createClickHouseSink } from "./analytics/create-clickhouse-sink.js";
 
 const intervalMs = Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 5000);
 const repositories = createProductionRepository();
@@ -14,6 +15,7 @@ const eventBus = new RedpandaEventBus(producer);
 const worker = new OutboxWorker({
   outboxRepository: repositories.outbox,
   eventBus,
+  analyticsSink: process.env.CLICKHOUSE_URL ? createClickHouseSink() : null,
   batchSize: Number(process.env.OUTBOX_BATCH_SIZE ?? 100)
 });
 

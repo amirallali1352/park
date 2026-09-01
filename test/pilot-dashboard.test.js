@@ -141,3 +141,35 @@ test("derives Pilot booking KPIs from persisted bookings after restart", async (
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("uses the durable analytics snapshot when ClickHouse is configured", async () => {
+  const server = createApiServer(undefined, {
+    analyticsSink: {
+      async snapshot(tenantId) {
+        assert.equal(tenantId, "park-1");
+        return {
+          tenantId, bookingCount: 7, utilizationMinutes: 420,
+          rdSpend: 1800, economicOutput: 2500
+        };
+      }
+    },
+    facilityRepository: {
+      async listEquipment() { return []; },
+      async listBookings() { return []; }
+    },
+    sampleRepository: { async listSamples() { return []; } }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/v1/pilot/summary`,
+      { headers: { "x-tenant-id": "park-1" } }
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).kpis, {
+      bookingCount: 7, utilizationMinutes: 420, rdSpend: 1800
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

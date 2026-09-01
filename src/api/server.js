@@ -403,7 +403,9 @@ export function createApiServer(
           facilityRepository.listBookings(tenantId),
           sampleRepository.listSamples(tenantId)
         ]);
-        const snapshot = analytics.snapshot(tenantId);
+        const snapshot = analyticsSink?.snapshot
+          ? await analyticsSink.snapshot(tenantId)
+          : analytics.snapshot(tenantId);
         const persistedBookingCount = bookings.length;
         const persistedUtilizationMinutes = bookings.reduce((total, booking) => {
           const duration = new Date(booking.endAt) - new Date(booking.startAt);
@@ -416,8 +418,12 @@ export function createApiServer(
           bookingCount: bookings.length,
           sampleCount: samples.length,
           kpis: {
-            bookingCount: Math.max(snapshot.bookingCount, persistedBookingCount),
-            utilizationMinutes: Math.max(snapshot.utilizationMinutes, persistedUtilizationMinutes),
+            bookingCount: analyticsSink?.snapshot
+              ? snapshot.bookingCount
+              : Math.max(snapshot.bookingCount, persistedBookingCount),
+            utilizationMinutes: analyticsSink?.snapshot
+              ? snapshot.utilizationMinutes
+              : Math.max(snapshot.utilizationMinutes, persistedUtilizationMinutes),
             rdSpend: snapshot.rdSpend
           }
         });
@@ -787,7 +793,6 @@ export function createApiServer(
           }
         };
         analytics.consume(analyticsEvent);
-        if (analyticsSink) await analyticsSink.write(analyticsEvent);
         return sendJson(response, 201, booking);
       }
 

@@ -1,9 +1,10 @@
 export class OutboxWorker {
   #outboxRepository;
   #eventBus;
+  #analyticsSink;
   #batchSize;
 
-  constructor({ outboxRepository, eventBus, batchSize = 100 }) {
+  constructor({ outboxRepository, eventBus, analyticsSink = null, batchSize = 100 }) {
     if (!outboxRepository || typeof outboxRepository.listPending !== "function" ||
         typeof outboxRepository.markPublished !== "function") {
       throw new TypeError("A compatible outbox repository is required.");
@@ -13,6 +14,7 @@ export class OutboxWorker {
     }
     this.#outboxRepository = outboxRepository;
     this.#eventBus = eventBus;
+    this.#analyticsSink = analyticsSink;
     this.#batchSize = batchSize;
   }
 
@@ -30,6 +32,7 @@ export class OutboxWorker {
       seen.add(event.id);
       try {
         await this.#eventBus.publish(event);
+        if (this.#analyticsSink) await this.#analyticsSink.write(event);
         await this.#outboxRepository.markPublished(event.id, undefined, event.tenantId);
         published += 1;
       } catch {

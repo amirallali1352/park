@@ -21,3 +21,33 @@ test("writes analytics events to ClickHouse with parameterized values", async ()
     payload: JSON.stringify({ amount: 100 })
   }]);
 });
+
+test("reads tenant KPI snapshots from persisted ClickHouse events", async () => {
+  const calls = [];
+  const client = {
+    async insert() {},
+    async query(params) {
+      calls.push(params);
+      return {
+        async json() {
+          return [{
+            booking_count: "3",
+            utilization_minutes: "180",
+            rd_spend: "900",
+            economic_output: "1200"
+          }];
+        }
+      };
+    }
+  };
+  const sink = new ClickHouseAnalyticsSink({ client, table: "stp_events" });
+  assert.deepEqual(await sink.snapshot("park-1"), {
+    tenantId: "park-1",
+    bookingCount: 3,
+    utilizationMinutes: 180,
+    rdSpend: 900,
+    economicOutput: 1200
+  });
+  assert.equal(calls[0].query_params.tenantId, "park-1");
+  assert.match(calls[0].query, /GROUP BY event_id/);
+});
