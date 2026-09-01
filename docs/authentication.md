@@ -54,3 +54,10 @@ Authorization: Bearer <accessToken>
 
 در محیط PostgreSQL، ارسال `tenantId` هنگام Login لازم است تا جست‌وجوی کاربر
 با RLS در محدوده همان Tenant انجام شود.
+
+## پروفایل کاربر جاری
+
+`GET /api/v1/auth/me`
+
+این مسیر به Bearer token نیاز دارد و فقط شناسه کاربر، Tenant، نقش و ایمیل موجود
+در JWT را برمی‌گرداند.

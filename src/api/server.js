@@ -194,6 +194,18 @@ export function createApiServer(
         });
       }
 
+      if (url.pathname === "/api/v1/auth/me" && method === "GET") {
+        if (!claims) throw new AuthError("Bearer access token is required.", "AUTH_REQUIRED");
+        return sendJson(response, 200, {
+          user: {
+            id: claims.sub,
+            tenantId: claims.tenantId,
+            role: claims.role,
+            ...(claims.email ? { email: claims.email } : {})
+          }
+        });
+      }
+
       if (url.pathname === "/api/v1/analytics/kpis" && method === "GET") {
         const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
         if (!tenantId) return sendJson(response, 401, {
