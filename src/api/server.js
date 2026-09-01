@@ -32,6 +32,8 @@ import { EmbeddingError } from "../search/embedding.js";
 import { AnalyticsAggregator } from "../analytics/aggregator.js";
 import { FinanceError, approveEscrow, createEscrow, releaseEscrow } from "../domain/finance.js";
 import { InMemoryFinanceRepository } from "../infrastructure/in-memory-finance-repository.js";
+import { VoucherError, applyVoucher, createVoucher } from "../domain/voucher.js";
+import { InMemoryVoucherRepository } from "../infrastructure/in-memory-voucher-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -103,6 +105,11 @@ function errorResponse(error) {
       error.code === "ESCROW_ALREADY_RELEASED" ? 409 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof VoucherError) {
+    const status = ["VOUCHER_NOT_FOUND", "ESCROW_NOT_FOUND"].includes(error.code) ? 404 :
+      ["VOUCHER_EXHAUSTED", "VOUCHER_AMOUNT_EXCEEDED"].includes(error.code) ? 409 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -131,6 +138,7 @@ export function createApiServer(
     analytics = new AnalyticsAggregator(),
     analyticsSink = null,
     financeRepository = new InMemoryFinanceRepository(),
+    voucherRepository = new InMemoryVoucherRepository(),
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -188,6 +196,63 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         return sendJson(response, 200, await financeRepository.list(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/finance/vouchers" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const voucher = createVoucher({ ...(await readJson(request)), tenantId });
+        await voucherRepository.save(voucher);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "voucher.created", resourceType: "voucher", resourceId: voucher.id,
+          payload: voucher
+        }));
+        return sendJson(response, 201, voucher);
+      }
+
+      if (url.pathname === "/api/v1/finance/vouchers" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await voucherRepository.list(tenantId));
+      }
+
+      const voucherApplyMatch = url.pathname.match(
+        /^\/api\/v1\/finance\/escrows\/([^/]+)\/apply-voucher$/
+      );
+      if (voucherApplyMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const { voucherId, amount } = await readJson(request);
+        const escrow = await financeRepository.find(tenantId, voucherApplyMatch[1]);
+        if (!escrow) throw new VoucherError("Escrow was not found.", "ESCROW_NOT_FOUND");
+        const voucher = await voucherRepository.find(tenantId, voucherId);
+        if (!voucher) throw new VoucherError("Voucher was not found.", "VOUCHER_NOT_FOUND");
+        if (voucher.beneficiaryId !== escrow.payerId && voucher.beneficiaryId !== escrow.payeeId) {
+          throw new VoucherError("Voucher beneficiary is not a party to the escrow.", "VOUCHER_BENEFICIARY_MISMATCH");
+        }
+        if (voucher.currency !== escrow.currency) {
+          throw new VoucherError("Voucher currency must match the escrow currency.", "VOUCHER_CURRENCY_MISMATCH");
+        }
+        const actorId = claims?.sub ?? tenantId;
+        const result = applyVoucher(voucher, {
+          escrowId: escrow.id,
+          amount: Number(amount),
+          actorId
+        });
+        await voucherRepository.save(result.voucher);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId,
+          action: "voucher.applied", resourceType: "voucher", resourceId: voucher.id,
+          payload: { escrowId: escrow.id, appliedAmount: result.appliedAmount, remainingAmount: result.remainingAmount }
+        }));
+        return sendJson(response, 200, { ...result, escrow });
       }
 
       const escrowActionMatch = url.pathname.match(/^\/api\/v1\/finance\/escrows\/([^/]+)\/(approve|release)$/);
