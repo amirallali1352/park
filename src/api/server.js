@@ -22,6 +22,7 @@ import { EncryptedFileService } from "../security/encrypted-file-service.js";
 import { InMemoryObjectStorage } from "../infrastructure/in-memory-object-storage.js";
 import { LegalError, createContract, signContract } from "../domain/legal.js";
 import { InMemoryLegalRepository } from "../infrastructure/in-memory-legal-repository.js";
+import { DigitalSignatureError } from "../security/digital-signature.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -75,6 +76,9 @@ function errorResponse(error) {
       error.code === "CONTRACT_NOT_FOUND" ? 404 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof DigitalSignatureError) {
+    return { status: 400, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -95,6 +99,7 @@ export function createApiServer(
     encryptionKek = process.env.ENCRYPTION_KEK,
     legalRepository = new InMemoryLegalRepository(),
     requireLegalWrapper = false,
+    signatureProvider = null,
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -421,7 +426,11 @@ export function createApiServer(
         });
         const contract = await legalRepository.find(tenantId, contractSignMatch[1]);
         if (!contract) throw new LegalError("Contract was not found.", "CONTRACT_NOT_FOUND");
-        const signed = signContract(contract, await readJson(request));
+        const signatureRequest = await readJson(request);
+        const digitalSignature = signatureProvider
+          ? signatureProvider.sign(contract, { partyId: signatureRequest.partyId })
+          : undefined;
+        const signed = signContract(contract, { ...signatureRequest, digitalSignature });
         await legalRepository.save(signed);
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
@@ -429,6 +438,20 @@ export function createApiServer(
           payload: { partyId: signed.signatures.at(-1).partyId, status: signed.status }
         }));
         return sendJson(response, 200, signed);
+      }
+
+      const contractVerifyMatch = url.pathname.match(/^\/api\/v1\/contracts\/([^/]+)\/verify$/);
+      if (contractVerifyMatch && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const contract = await legalRepository.find(tenantId, contractVerifyMatch[1]);
+        if (!contract) throw new LegalError("Contract was not found.", "CONTRACT_NOT_FOUND");
+        const valid = contract.signatures.every((entry) =>
+          entry.digitalSignature && signatureProvider?.verify(contract, entry.digitalSignature)
+        );
+        return sendJson(response, 200, { valid, signatures: contract.signatures.length });
       }
 
       const fileMatch = url.pathname.match(/^\/api\/v1\/files\/([^/]+)$/);

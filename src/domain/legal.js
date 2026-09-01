@@ -36,14 +36,18 @@ export function createContract({ id, tenantId, type, title, parties, terms = {},
   });
 }
 
-export function signContract(contract, { partyId, signatureRef, signedAt = new Date().toISOString() } = {}) {
+export function signContract(contract, {
+  partyId, signatureRef, digitalSignature, signedAt = new Date().toISOString()
+} = {}) {
   if (!contract || !contract.parties.includes(partyId) || !signatureRef) {
     throw new LegalError("A valid party and signature reference are required.", "INVALID_SIGNATURE");
   }
   if (contract.signatures.some((signature) => signature.partyId === partyId)) {
     throw new LegalError("This party has already signed the contract.", "DUPLICATE_SIGNATURE");
   }
-  const signatures = [...contract.signatures, { partyId, signatureRef, signedAt }];
+  const signatures = [...contract.signatures, {
+    partyId, signatureRef, signedAt, ...(digitalSignature ? { digitalSignature } : {})
+  }];
   return Object.freeze({
     ...contract,
     status: signatures.length === contract.parties.length
