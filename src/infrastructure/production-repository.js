@@ -7,6 +7,7 @@ import { PostgresAuditRepository } from "./postgres-audit-repository.js";
 import { PostgresFileMetadataRepository } from "./postgres-file-metadata-repository.js";
 import { PostgresLegalRepository } from "./postgres-legal-repository.js";
 import { PostgresMarketplaceRepository } from "./postgres-marketplace-repository.js";
+import { PostgresConsortiumRepository } from "./postgres-consortium-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
 
 export function createProductionRepository({
@@ -22,6 +23,7 @@ export function createProductionRepository({
     audit: new PostgresAuditRepository(pool),
     fileMetadata: new PostgresFileMetadataRepository(pool),
     legal: new PostgresLegalRepository(pool),
-    marketplace: new PostgresMarketplaceRepository(pool)
+    marketplace: new PostgresMarketplaceRepository(pool),
+    consortium: new PostgresConsortiumRepository(pool)
   };
 }

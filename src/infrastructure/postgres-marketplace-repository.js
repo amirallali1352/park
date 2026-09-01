@@ -63,4 +63,20 @@ export class PostgresMarketplaceRepository {
     ));
     return result.rows.map(mapListing);
   }
+
+  async discover({ type, tag, status = "open" } = {}) {
+    const values = [];
+    const filters = [];
+    if (type) { values.push(type); filters.push(`type = $${values.length}`); }
+    if (status) { values.push(status); filters.push(`status = $${values.length}`); }
+    if (tag) {
+      values.push(JSON.stringify([tag]));
+      filters.push(`tags @> $${values.length}::jsonb`);
+    }
+    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+    const result = await this.#client.query(
+      `SELECT * FROM marketplace_listings ${where} ORDER BY created_at, id`, values
+    );
+    return result.rows.map(mapListing);
+  }
 }

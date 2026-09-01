@@ -31,6 +31,7 @@ const server = createApiServer(repositories?.identity, {
   auditRepository: repositories?.audit,
   legalRepository: repositories?.legal,
   marketplaceRepository: repositories?.marketplace,
+  consortiumRepository: repositories?.consortium,
   fileService,
   requireLegalWrapper: process.env.REQUIRE_LEGAL_WRAPPER === "true",
   encryptionKek: process.env.ENCRYPTION_KEK

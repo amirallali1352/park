@@ -18,4 +18,12 @@ export class InMemoryMarketplaceRepository {
       (!tag || listing.tags.includes(tag))
     );
   }
+
+  async discover({ type, tag, status = "open" } = {}) {
+    return [...this.#listings.values()].filter((listing) =>
+      (!status || listing.status === status) &&
+      (!type || listing.type === type) &&
+      (!tag || listing.tags.includes(tag))
+    );
+  }
 }

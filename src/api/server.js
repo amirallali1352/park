@@ -25,6 +25,9 @@ import { InMemoryLegalRepository } from "../infrastructure/in-memory-legal-repos
 import { DigitalSignatureError } from "../security/digital-signature.js";
 import { MarketplaceError, closeListing, createListing } from "../domain/marketplace.js";
 import { InMemoryMarketplaceRepository } from "../infrastructure/in-memory-marketplace-repository.js";
+import { rankListings } from "../domain/matching.js";
+import { ConsortiumError, createConsortium } from "../domain/consortium.js";
+import { InMemoryConsortiumRepository } from "../infrastructure/in-memory-consortium-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -85,6 +88,9 @@ function errorResponse(error) {
     const status = error.code === "LISTING_NOT_FOUND" ? 404 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof ConsortiumError) {
+    return { status: 400, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -107,6 +113,7 @@ export function createApiServer(
     requireLegalWrapper = false,
     signatureProvider = null,
     marketplaceRepository = new InMemoryMarketplaceRepository(),
+    consortiumRepository = new InMemoryConsortiumRepository(),
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -442,6 +449,41 @@ export function createApiServer(
           tag: url.searchParams.get("tag") ?? undefined,
           status: url.searchParams.get("status") ?? "open"
         }));
+      }
+
+      if (url.pathname === "/api/v1/marketplace/match" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const requestListing = await readJson(request);
+        const candidates = typeof marketplaceRepository.discover === "function"
+          ? await marketplaceRepository.discover({ status: "open" })
+          : await marketplaceRepository.list(tenantId, { status: "open" });
+        return sendJson(response, 200, rankListings(requestListing, candidates));
+      }
+
+      if (url.pathname === "/api/v1/marketplace/consortia" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const consortium = createConsortium({ ...(await readJson(request)), tenantId });
+        await consortiumRepository.save(consortium);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "marketplace.consortium.created", resourceType: "consortium",
+          resourceId: consortium.id, payload: consortium
+        }));
+        return sendJson(response, 201, consortium);
+      }
+
+      if (url.pathname === "/api/v1/marketplace/consortia" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await consortiumRepository.list(tenantId));
       }
 
       const closeListingMatch = url.pathname.match(/^\/api\/v1\/marketplace\/listings\/([^/]+)\/close$/);
