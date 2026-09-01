@@ -7,7 +7,7 @@ import {
 } from "../domain/identity.js";
 import { InMemoryIdentityRepository } from "../infrastructure/in-memory-identity-repository.js";
 import { InMemoryFacilityRepository } from "../infrastructure/in-memory-facility-repository.js";
-import { FacilityError, createBooking, createEquipment } from "../domain/facility.js";
+import { FacilityError, createBooking, createEquipment, createMaintenanceWindow } from "../domain/facility.js";
 import { SampleError, createCustodyEvent, createSample } from "../domain/sample.js";
 import { InMemorySampleRepository } from "../infrastructure/in-memory-sample-repository.js";
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
@@ -40,7 +40,7 @@ function errorResponse(error) {
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof FacilityError) {
-    const status = error.code === "BOOKING_CONFLICT" ? 409 : 400;
+    const status = ["BOOKING_CONFLICT", "MAINTENANCE_CONFLICT"].includes(error.code) ? 409 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
   if (error instanceof SampleError) {
@@ -170,6 +170,30 @@ export function createApiServer(
           });
         }
         return sendJson(response, 200, await facilityRepository.listBookings(tenantId));
+      }
+
+      const maintenanceMatch = url.pathname.match(/^\/api\/v1\/equipment\/([^/]+)\/maintenance$/);
+      if (maintenanceMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const window = createMaintenanceWindow({
+          ...(await readJson(request)),
+          equipmentId: maintenanceMatch[1],
+          tenantId
+        });
+        await facilityRepository.saveMaintenance(window);
+        return sendJson(response, 201, window);
+      }
+
+      if (maintenanceMatch && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200,
+          await facilityRepository.listMaintenance(tenantId, maintenanceMatch[1]));
       }
 
       if (url.pathname === "/api/v1/samples" && method === "POST") {

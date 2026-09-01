@@ -3,6 +3,7 @@ import { FacilityError, bookingOverlaps } from "../domain/facility.js";
 export class InMemoryFacilityRepository {
   #equipment = new Map();
   #bookings = new Map();
+  #maintenance = new Map();
 
   async saveEquipment(equipment) {
     this.#equipment.set(equipment.id, equipment);
@@ -17,6 +18,19 @@ export class InMemoryFacilityRepository {
     const equipment = this.#equipment.get(booking.equipmentId);
     if (!equipment || equipment.tenantId !== booking.tenantId) {
       throw new FacilityError("Equipment does not belong to this tenant.", "EQUIPMENT_ACCESS_DENIED");
+    }
+    const maintenanceConflict = [...this.#maintenance.values()].find(
+      (window) =>
+        window.tenantId === booking.tenantId &&
+        window.equipmentId === booking.equipmentId &&
+        window.status === "scheduled" &&
+        bookingOverlaps(window, booking)
+    );
+    if (maintenanceConflict) {
+      throw new FacilityError(
+        "Equipment is unavailable during scheduled maintenance.",
+        "MAINTENANCE_CONFLICT"
+      );
     }
     const conflict = [...this.#bookings.values()].find(
       (candidate) =>
@@ -36,5 +50,21 @@ export class InMemoryFacilityRepository {
 
   async listBookings(tenantId) {
     return [...this.#bookings.values()].filter((booking) => booking.tenantId === tenantId);
+  }
+
+  async saveMaintenance(window) {
+    const equipment = this.#equipment.get(window.equipmentId);
+    if (!equipment || equipment.tenantId !== window.tenantId) {
+      throw new FacilityError("Equipment does not belong to this tenant.", "EQUIPMENT_ACCESS_DENIED");
+    }
+    this.#maintenance.set(window.id, window);
+    return window;
+  }
+
+  async listMaintenance(tenantId, equipmentId) {
+    return [...this.#maintenance.values()].filter(
+      (window) => window.tenantId === tenantId &&
+        (!equipmentId || window.equipmentId === equipmentId)
+    );
   }
 }

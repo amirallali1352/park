@@ -44,3 +44,26 @@ test("uses a PostgreSQL range for booking overlap protection", async () => {
   await repository.saveBooking(booking);
   assert.ok(client.calls[1].text.includes("tstzrange($5, $6, '[)')"));
 });
+
+test("checks maintenance conflicts before inserting a booking", async () => {
+  const calls = [];
+  const client = {
+    async query(text, values) {
+      calls.push({ text, values });
+      if (text.trimStart().startsWith("SELECT") && text.includes("FROM equipment_maintenance")) {
+        return { rows: [{ id: "maintenance-1" }] };
+      }
+      return { rows: [] };
+    }
+  };
+  const repository = new PostgresFacilityRepository(client);
+  await assert.rejects(
+    () => repository.saveBooking({
+      id: "b-1", tenantId: "park-1", equipmentId: "eq-1", userId: "u-1",
+      startAt: "2026-09-05T11:00:00.000Z", endAt: "2026-09-05T11:30:00.000Z",
+      status: "confirmed"
+    }),
+    { code: "MAINTENANCE_CONFLICT" }
+  );
+  assert.ok(calls.some((call) => call.text.includes("FROM equipment_maintenance")));
+});
