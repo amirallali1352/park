@@ -2,6 +2,7 @@ import pg from "pg";
 import { PostgresIdentityRepository } from "./postgres-identity-repository.js";
 import { PostgresFacilityRepository } from "./postgres-facility-repository.js";
 import { PostgresSampleRepository } from "./postgres-sample-repository.js";
+import { PostgresOutboxRepository } from "./postgres-outbox-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
 
 export function createProductionRepository({
@@ -12,6 +13,7 @@ export function createProductionRepository({
   return {
     identity: new PostgresIdentityRepository(pool),
     facility: new PostgresFacilityRepository(pool),
-    samples: new PostgresSampleRepository(pool)
+    samples: new PostgresSampleRepository(pool),
+    outbox: new PostgresOutboxRepository(pool)
   };
 }

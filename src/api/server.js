@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import {
   IdentityError,
   assertTenantAccess,
@@ -10,6 +11,8 @@ import { InMemoryFacilityRepository } from "../infrastructure/in-memory-facility
 import { FacilityError, createBooking, createEquipment, createMaintenanceWindow } from "../domain/facility.js";
 import { SampleError, createCustodyEvent, createSample } from "../domain/sample.js";
 import { InMemorySampleRepository } from "../infrastructure/in-memory-sample-repository.js";
+import { createDomainEvent, DomainEventType } from "../domain/outbox.js";
+import { InMemoryOutboxRepository } from "../infrastructure/in-memory-outbox-repository.js";
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 
 function sendJson(response, status, body) {
@@ -62,7 +65,8 @@ export function createApiServer(
     authIssuer = process.env.AUTH_ISSUER,
     authAudience = process.env.AUTH_AUDIENCE,
     facilityRepository = new InMemoryFacilityRepository(),
-    sampleRepository = new InMemorySampleRepository()
+    sampleRepository = new InMemorySampleRepository(),
+    outboxRepository = new InMemoryOutboxRepository()
   } = {}
 ) {
   return createServer(async (request, response) => {
@@ -159,6 +163,10 @@ export function createApiServer(
           userId: claims?.sub ?? payload.userId
         });
         await facilityRepository.saveBooking(booking);
+        await outboxRepository.save(createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
+          aggregateId: booking.id, payload: booking
+        }));
         return sendJson(response, 201, booking);
       }
 
@@ -184,6 +192,10 @@ export function createApiServer(
           tenantId
         });
         await facilityRepository.saveMaintenance(window);
+        await outboxRepository.save(createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.MAINTENANCE_SCHEDULED,
+          aggregateId: window.id, payload: window
+        }));
         return sendJson(response, 201, window);
       }
 
@@ -228,6 +240,12 @@ export function createApiServer(
           actorId: claims?.sub ?? payload.actorId
         });
         await sampleRepository.saveCustodyEvent(event);
+        if (event.action === "received") {
+          await outboxRepository.save(createDomainEvent({
+            id: randomUUID(), tenantId, type: DomainEventType.SAMPLE_RECEIVED,
+            aggregateId: event.sampleId, payload: event
+          }));
+        }
         return sendJson(response, 201, event);
       }
 
