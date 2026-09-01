@@ -56,6 +56,14 @@ function sendHtml(response, status, body) {
   response.end(body);
 }
 
+function sendText(response, status, body, contentType = "text/plain; version=0.0.4; charset=utf-8") {
+  response.writeHead(status, {
+    "content-type": contentType,
+    "cache-control": "no-store"
+  });
+  response.end(body);
+}
+
 function pilotDashboardHtml() {
   return `<!doctype html>
 <html lang="fa" dir="rtl">
@@ -350,6 +358,7 @@ export function createApiServer(
     vectorIndex = null,
     analytics = new AnalyticsAggregator(),
     analyticsSink = null,
+    readinessChecks = {},
     financeRepository = new InMemoryFinanceRepository(),
     voucherRepository = new InMemoryVoucherRepository(),
     unitOfWork = null,
@@ -365,7 +374,9 @@ export function createApiServer(
     ? loginRateLimit
     : new LoginRateLimiter(loginRateLimit);
   const encryption = encryptionKek ? new EnvelopeEncryption({ kek: encryptionKek }) : null;
+  let requestCount = 0;
   return createServer(async (request, response) => {
+    requestCount += 1;
     try {
       const url = new URL(request.url, "http://localhost");
       const method = request.method ?? "GET";
@@ -385,6 +396,37 @@ export function createApiServer(
 
       if (method === "GET" && url.pathname === "/health") {
         return sendJson(response, 200, { status: "ok", service: "stp-os" });
+      }
+
+      if (method === "GET" && url.pathname === "/ready") {
+        const dependencies = {};
+        let ready = true;
+        for (const [name, check] of Object.entries(readinessChecks)) {
+          if (typeof check !== "function") continue;
+          try {
+            await check();
+            dependencies[name] = "ok";
+          } catch {
+            ready = false;
+            dependencies[name] = "failed";
+          }
+        }
+        return sendJson(response, ready ? 200 : 503, {
+          status: ready ? "ready" : "not_ready",
+          service: "stp-os",
+          dependencies
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/metrics") {
+        return sendText(response, 200, [
+          "# HELP stp_os_http_requests_total Total HTTP requests received by STP OS.",
+          "# TYPE stp_os_http_requests_total counter",
+          `stp_os_http_requests_total ${requestCount}`,
+          "# HELP stp_os_process_uptime_seconds Process uptime in seconds.",
+          "# TYPE stp_os_process_uptime_seconds gauge",
+          `stp_os_process_uptime_seconds ${process.uptime()}`
+        ].join("\n") + "\n");
       }
 
       if (method === "GET" && url.pathname === "/pilot/dashboard") {

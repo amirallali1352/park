@@ -37,6 +37,23 @@ const vectorIndex = process.env.OPENSEARCH_NODE
 const analyticsSink = process.env.CLICKHOUSE_URL
   ? createClickHouseSink()
   : undefined;
+const readinessChecks = {
+  ...(repositories ? {
+    postgres: async () => {
+      await repositories.pool.query("SELECT 1");
+    }
+  } : {}),
+  ...(analyticsSink ? {
+    clickhouse: async () => {
+      await analyticsSink.client.query({ query: "SELECT 1", format: "JSONEachRow" });
+    }
+  } : {}),
+  ...(vectorIndex ? {
+    opensearch: async () => {
+      await vectorIndex.client.cluster.health();
+    }
+  } : {})
+};
 const server = createApiServer(repositories?.identity, {
   authRequired,
   authSecret: process.env.AUTH_SECRET,
@@ -56,6 +73,7 @@ const server = createApiServer(repositories?.identity, {
   embeddingProvider,
   vectorIndex,
   analyticsSink,
+  readinessChecks,
   fileService,
   requireLegalWrapper: process.env.REQUIRE_LEGAL_WRAPPER === "true",
   encryptionKek: process.env.ENCRYPTION_KEK

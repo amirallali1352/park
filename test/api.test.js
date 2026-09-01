@@ -21,6 +21,52 @@ test("health endpoint reports the API is running", async () => {
   });
 });
 
+test("readiness endpoint reports dependency status", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/ready`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      status: "ready",
+      service: "stp-os",
+      dependencies: {}
+    });
+  });
+});
+
+test("metrics endpoint exposes Prometheus-compatible request metrics", async () => {
+  await withServer(async (baseUrl) => {
+    await fetch(`${baseUrl}/health`);
+    const response = await fetch(`${baseUrl}/metrics`);
+    const body = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /text\/plain/);
+    assert.match(body, /stp_os_http_requests_total/);
+    assert.match(body, /stp_os_process_uptime_seconds/);
+  });
+});
+
+test("readiness endpoint returns 503 when a dependency fails", async () => {
+  const server = createApiServer(undefined, {
+    readinessChecks: {
+      postgres: async () => {
+        throw new Error("database unavailable");
+      }
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/ready`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      status: "not_ready",
+      service: "stp-os",
+      dependencies: { postgres: "failed" }
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("creates a tenant and returns a public tenant representation", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/v1/tenants`, {
