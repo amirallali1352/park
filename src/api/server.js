@@ -101,6 +101,7 @@ function pilotDashboardHtml() {
       <input id="email" type="email" placeholder="ایمیل مدیر (اختیاری)">
       <input id="password" type="password" placeholder="رمز عبور (اختیاری)">
       <button type="submit">بارگذاری</button>
+      <button id="logout" type="button">خروج</button>
     </form>
     <p id="message" class="muted">Enter a tenant ID to load data.</p>
     <section class="grid" aria-live="polite">
@@ -139,7 +140,14 @@ function pilotDashboardHtml() {
   <script>
     const form = document.querySelector("#tenant-form");
     const message = document.querySelector("#message");
-    let accessToken = null;
+    let accessToken = sessionStorage.getItem("stp-os-pilot-token");
+    const savedTenantId = sessionStorage.getItem("stp-os-pilot-tenant");
+    if (savedTenantId) document.querySelector("#tenant-id").value = savedTenantId;
+    if (accessToken) {
+      document.querySelector("#email").style.display = "none";
+      document.querySelector("#password").style.display = "none";
+      message.textContent = "نشست کاربر فعال است.";
+    }
     const jsonHeaders = () => ({
       "content-type": "application/json",
       "x-tenant-id": document.querySelector("#tenant-id").value.trim(),
@@ -172,6 +180,8 @@ function pilotDashboardHtml() {
           if (!login.ok) throw new Error("Login failed. Check tenant, email and password.");
           const loginData = await login.json();
           accessToken = loginData.accessToken;
+          sessionStorage.setItem("stp-os-pilot-token", accessToken);
+          sessionStorage.setItem("stp-os-pilot-tenant", tenantId);
           headers.authorization = "Bearer " + accessToken;
         }
         const response = await fetch("/api/v1/pilot/summary", {
@@ -189,6 +199,14 @@ function pilotDashboardHtml() {
       } catch (error) {
         message.textContent = error.message;
       }
+    });
+    document.querySelector("#logout").addEventListener("click", () => {
+      accessToken = null;
+      sessionStorage.removeItem("stp-os-pilot-token");
+      sessionStorage.removeItem("stp-os-pilot-tenant");
+      document.querySelector("#email").style.display = "";
+      document.querySelector("#password").style.display = "";
+      message.textContent = "از حساب خارج شدید.";
     });
     for (const [id, path] of [
       ["equipment-form", "/api/v1/equipment"],

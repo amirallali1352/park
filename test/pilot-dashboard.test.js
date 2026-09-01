@@ -83,6 +83,8 @@ test("serves the initial Pilot dashboard shell", async () => {
     assert.match(html, /dir="rtl"/);
     assert.match(html, /#tenant-form/);
     assert.match(html, /grid-template-columns: repeat\(auto-fit/);
+    assert.match(html, /sessionStorage/);
+    assert.match(html, /خروج/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
