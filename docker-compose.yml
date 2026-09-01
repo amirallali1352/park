@@ -91,6 +91,10 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:25.3
+    environment:
+      CLICKHOUSE_DB: stp_os
+      CLICKHOUSE_USER: stp_app
+      CLICKHOUSE_PASSWORD: change-me-clickhouse
     ports:
       - "8123:8123"
       - "9002:9000"

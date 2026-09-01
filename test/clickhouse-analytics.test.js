@@ -17,7 +17,7 @@ test("writes analytics events to ClickHouse with parameterized values", async ()
     event_id: "event-1",
     event_type: "BookingConfirmed",
     tenant_id: "park-1",
-    occurred_at: "2026-09-01T00:00:00.000Z",
+    occurred_at: "2026-09-01 00:00:00.000",
     payload: JSON.stringify({ amount: 100 })
   }]);
 });

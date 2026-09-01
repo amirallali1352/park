@@ -22,5 +22,8 @@ test("indexes listings and executes a tenant-safe vector search", async () => {
   assert.equal(results[0].score, 0.93);
   assert.equal(calls[0].params.id, "startup-1/offer-1");
   assert.match(JSON.stringify(calls[1].params.body), /knn/);
-  assert.match(JSON.stringify(calls[1].params.body), /tenantId/);
+  assert.deepEqual(calls[1].params.body.query.knn.embedding.filter.bool.filter, [
+    { term: { tenantId: "park-1" } },
+    { term: { status: "open" } }
+  ]);
 });

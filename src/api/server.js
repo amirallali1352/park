@@ -48,6 +48,84 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+function sendHtml(response, status, body) {
+  response.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store"
+  });
+  response.end(body);
+}
+
+function pilotDashboardHtml() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>STP OS Pilot Dashboard</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; background: #0d1726; color: #e7eef8; }
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+    h1 { margin-bottom: 8px; } .muted { color: #9fb0c5; }
+    form { display: flex; gap: 8px; margin: 24px 0; }
+    input, button { border: 1px solid #38506d; border-radius: 8px; padding: 10px 12px; }
+    input { flex: 1; background: #122239; color: inherit; }
+    button { background: #2d83f7; color: white; cursor: pointer; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: 14px; }
+    .card { background: #14263d; border: 1px solid #284665; border-radius: 12px; padding: 18px; }
+    .value { font-size: 30px; font-weight: 700; margin-top: 8px; }
+    #message { min-height: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="muted">Cross-Park Core Facility &amp; B2B Innovation Ecosystem</p>
+    <h1>STP OS Pilot Dashboard</h1>
+    <p class="muted">Equipment, bookings, samples and tenant KPIs.</p>
+    <form id="tenant-form">
+      <input id="tenant-id" placeholder="Tenant ID, e.g. park-1" required>
+      <button type="submit">Load Pilot</button>
+    </form>
+    <p id="message" class="muted">Enter a tenant ID to load data.</p>
+    <section class="grid" aria-live="polite">
+      <article class="card"><span class="muted">Equipment</span><div id="equipment" class="value">—</div></article>
+      <article class="card"><span class="muted">Available equipment</span><div id="available-equipment" class="value">—</div></article>
+      <article class="card"><span class="muted">Bookings</span><div id="bookings" class="value">—</div></article>
+      <article class="card"><span class="muted">Samples</span><div id="samples" class="value">—</div></article>
+      <article class="card"><span class="muted">Utilization (min)</span><div id="utilization" class="value">—</div></article>
+      <article class="card"><span class="muted">R&amp;D spend</span><div id="rd-spend" class="value">—</div></article>
+    </section>
+  </main>
+  <script>
+    const form = document.querySelector("#tenant-form");
+    const message = document.querySelector("#message");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const tenantId = document.querySelector("#tenant-id").value.trim();
+      message.textContent = "Loading…";
+      try {
+        const response = await fetch("/api/v1/pilot/summary", {
+          headers: { "x-tenant-id": tenantId }
+        });
+        if (!response.ok) throw new Error("Unable to load tenant data.");
+        const data = await response.json();
+        document.querySelector("#equipment").textContent = data.equipmentCount;
+        document.querySelector("#available-equipment").textContent = data.availableEquipmentCount;
+        document.querySelector("#bookings").textContent = data.bookingCount;
+        document.querySelector("#samples").textContent = data.sampleCount;
+        document.querySelector("#utilization").textContent = data.kpis.utilizationMinutes;
+        document.querySelector("#rd-spend").textContent = data.kpis.rdSpend;
+        message.textContent = "Loaded tenant: " + data.tenantId;
+      } catch (error) {
+        message.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
+
 async function readJson(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -204,6 +282,37 @@ export function createApiServer(
 
       if (method === "GET" && url.pathname === "/health") {
         return sendJson(response, 200, { status: "ok", service: "stp-os" });
+      }
+
+      if (method === "GET" && url.pathname === "/pilot/dashboard") {
+        return sendHtml(response, 200, pilotDashboardHtml());
+      }
+
+      if (method === "GET" && url.pathname === "/api/v1/pilot/summary") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) {
+          return sendJson(response, 401, {
+            error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+          });
+        }
+        const [equipment, bookings, samples] = await Promise.all([
+          facilityRepository.listEquipment(tenantId),
+          facilityRepository.listBookings(tenantId),
+          sampleRepository.listSamples(tenantId)
+        ]);
+        const snapshot = analytics.snapshot(tenantId);
+        return sendJson(response, 200, {
+          tenantId,
+          equipmentCount: equipment.length,
+          availableEquipmentCount: equipment.filter((item) => item.status === "available").length,
+          bookingCount: bookings.length,
+          sampleCount: samples.length,
+          kpis: {
+            bookingCount: snapshot.bookingCount,
+            utilizationMinutes: snapshot.utilizationMinutes,
+            rdSpend: snapshot.rdSpend
+          }
+        });
       }
 
       if (url.pathname === "/api/v1/auth/login" && method === "POST") {

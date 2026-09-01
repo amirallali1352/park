@@ -32,21 +32,25 @@ export class OpenSearchVectorIndex {
       body: {
         size: k,
         query: {
-          bool: {
-            filter: [
-              { term: { status: "open" } },
-              { exists: { field: "tenantId" } }
-            ],
-            must: [{
-              knn: {
-                embedding: { vector: embedding, k }
+          knn: {
+            embedding: {
+              vector: embedding,
+              k,
+              filter: {
+                bool: {
+                  filter: [
+                    { term: { tenantId } },
+                    { term: { status: "open" } }
+                  ]
+                }
               }
-            }]
+            }
           }
         }
       }
     });
-    return (result.hits?.hits ?? []).map((hit) => ({
+    const response = result.body ?? result;
+    return (response.hits?.hits ?? []).map((hit) => ({
       ...hit._source,
       score: hit._score,
       reasons: ["vector"]
