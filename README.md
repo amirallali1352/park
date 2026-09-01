@@ -48,6 +48,17 @@ npm.cmd start
 
 در این حالت عملیات نوشتن و خواندن کاربران داخل تراکنش انجام می‌شود و context مربوط به Tenant در همان اتصال تنظیم می‌گردد.
 
+## نمونه و زنجیره تحویل
+
+ماژول Sample Tracking برای هر نمونه بارکد یکتا در محدوده‌ی Tenant ایجاد می‌کند و رویدادهای تحویل را ثبت می‌کند:
+
+- `POST /api/v1/samples`
+- `GET /api/v1/samples`
+- `POST /api/v1/samples/:sampleId/custody`
+- `GET /api/v1/samples/:sampleId/custody`
+
+Migration `db/003_samples.sql` جدول‌های `samples` و `sample_custody_events` را ایجاد می‌کند. برای هر دو جدول RLS اجباری فعال است و یکتایی `(tenant_id, barcode)` در سطح PostgreSQL تضمین می‌شود.
+
 ## احراز هویت
 
 برای محیط توسعه می‌توان احراز هویت Bearer را فعال کرد:

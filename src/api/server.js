@@ -8,6 +8,8 @@ import {
 import { InMemoryIdentityRepository } from "../infrastructure/in-memory-identity-repository.js";
 import { InMemoryFacilityRepository } from "../infrastructure/in-memory-facility-repository.js";
 import { FacilityError, createBooking, createEquipment } from "../domain/facility.js";
+import { SampleError, createCustodyEvent, createSample } from "../domain/sample.js";
+import { InMemorySampleRepository } from "../infrastructure/in-memory-sample-repository.js";
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 
 function sendJson(response, status, body) {
@@ -41,6 +43,11 @@ function errorResponse(error) {
     const status = error.code === "BOOKING_CONFLICT" ? 409 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof SampleError) {
+    const status = error.code === "DUPLICATE_BARCODE" ? 409 :
+      error.code === "SAMPLE_ACCESS_DENIED" ? 403 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -54,7 +61,8 @@ export function createApiServer(
     authSecret = process.env.AUTH_SECRET,
     authIssuer = process.env.AUTH_ISSUER,
     authAudience = process.env.AUTH_AUDIENCE,
-    facilityRepository = new InMemoryFacilityRepository()
+    facilityRepository = new InMemoryFacilityRepository(),
+    sampleRepository = new InMemorySampleRepository()
   } = {}
 ) {
   return createServer(async (request, response) => {
@@ -162,6 +170,50 @@ export function createApiServer(
           });
         }
         return sendJson(response, 200, await facilityRepository.listBookings(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/samples" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const sample = createSample({ ...(await readJson(request)), tenantId });
+        await sampleRepository.saveSample(sample);
+        return sendJson(response, 201, sample);
+      }
+
+      if (url.pathname === "/api/v1/samples" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await sampleRepository.listSamples(tenantId));
+      }
+
+      const custodyMatch = url.pathname.match(/^\/api\/v1\/samples\/([^/]+)\/custody$/);
+      if (custodyMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const payload = await readJson(request);
+        const event = createCustodyEvent({
+          ...payload,
+          sampleId: custodyMatch[1],
+          tenantId,
+          actorId: claims?.sub ?? payload.actorId
+        });
+        await sampleRepository.saveCustodyEvent(event);
+        return sendJson(response, 201, event);
+      }
+
+      if (custodyMatch && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200,
+          await sampleRepository.listCustodyEvents(tenantId, custodyMatch[1]));
       }
 
       return sendJson(response, 404, {
