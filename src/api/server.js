@@ -368,6 +368,13 @@ export function createApiServer(
           objectId,
           contentType,
           content: Buffer.from(contentBase64, "base64")
+        }).then(async (metadata) => {
+          await auditRepository.append(createAuditEvent({
+            id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+            action: "file.created", resourceType: "file", resourceId: objectId,
+            payload: metadata
+          }));
+          return metadata;
         }));
       }
 
@@ -391,7 +398,13 @@ export function createApiServer(
         if (!tenantId) return sendJson(response, 401, {
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
+        const metadata = (await fileService.get({ tenantId, objectId: fileMatch[1] })).metadata;
         await fileService.remove({ tenantId, objectId: fileMatch[1] });
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "file.deleted", resourceType: "file", resourceId: fileMatch[1],
+          payload: metadata
+        }));
         response.writeHead(204);
         return response.end();
       }

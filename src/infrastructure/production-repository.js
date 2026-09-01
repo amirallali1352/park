@@ -4,6 +4,7 @@ import { PostgresFacilityRepository } from "./postgres-facility-repository.js";
 import { PostgresSampleRepository } from "./postgres-sample-repository.js";
 import { PostgresOutboxRepository } from "./postgres-outbox-repository.js";
 import { PostgresAuditRepository } from "./postgres-audit-repository.js";
+import { PostgresFileMetadataRepository } from "./postgres-file-metadata-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
 
 export function createProductionRepository({
@@ -16,6 +17,7 @@ export function createProductionRepository({
     facility: new PostgresFacilityRepository(pool),
     samples: new PostgresSampleRepository(pool),
     outbox: new PostgresOutboxRepository(pool),
-    audit: new PostgresAuditRepository(pool)
+    audit: new PostgresAuditRepository(pool),
+    fileMetadata: new PostgresFileMetadataRepository(pool)
   };
 }

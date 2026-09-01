@@ -16,7 +16,8 @@ const fileService = objectStorage && process.env.ENCRYPTION_KEK
   ? new EncryptedFileService({
     encryption: new EnvelopeEncryption({ kek: process.env.ENCRYPTION_KEK }),
     storage: objectStorage,
-    bucket: process.env.S3_BUCKET ?? "stp-encrypted-files"
+    bucket: process.env.S3_BUCKET ?? "stp-encrypted-files",
+    metadataRepository: repositories?.fileMetadata
   })
   : undefined;
 const server = createApiServer(repositories?.identity, {

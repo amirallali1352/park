@@ -15,7 +15,7 @@ function storageKey(tenantId, objectId) {
 export class EncryptedFileService {
   #metadata = new Map();
 
-  constructor({ encryption, storage, bucket = "stp-encrypted-files" } = {}) {
+  constructor({ encryption, storage, bucket = "stp-encrypted-files", metadataRepository } = {}) {
     if (!encryption || typeof encryption.encrypt !== "function" || typeof encryption.decrypt !== "function") {
       throw new TypeError("An envelope encryption service is required.");
     }
@@ -25,6 +25,7 @@ export class EncryptedFileService {
     this.encryption = encryption;
     this.storage = storage;
     this.bucket = bucket;
+    this.metadataRepository = metadataRepository;
   }
 
   async put({ tenantId, objectId, content, contentType = "application/octet-stream" } = {}) {
@@ -49,7 +50,7 @@ export class EncryptedFileService {
       envelopeVersion: envelope.version
     };
     this.#metadata.set(`${tenantId}/${objectId}`, metadata);
-    return metadata;
+    return this.metadataRepository ? this.metadataRepository.save(metadata) : metadata;
   }
 
   async get({ tenantId, objectId } = {}) {
@@ -60,7 +61,8 @@ export class EncryptedFileService {
       const stored = JSON.parse(encryptedBytes.toString("utf8"));
       const envelope = stored.envelope ?? stored;
       const content = this.encryption.decrypt(envelope, { tenantId, objectId });
-      const metadata = this.#metadata.get(`${tenantId}/${objectId}`) ?? {
+      const metadata = this.#metadata.get(`${tenantId}/${objectId}`) ??
+        (this.metadataRepository ? await this.metadataRepository.find(tenantId, objectId) : null) ?? {
         tenantId,
         objectId,
         bucket: this.bucket,
@@ -87,5 +89,6 @@ export class EncryptedFileService {
     }
     await this.storage.delete(this.bucket, key);
     this.#metadata.delete(`${tenantId}/${objectId}`);
+    if (this.metadataRepository) await this.metadataRepository.remove(tenantId, objectId);
   }
 }
