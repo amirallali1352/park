@@ -8,6 +8,11 @@ Supported events:
 - `BookingConfirmed`
 - `SampleReceived`
 - `MaintenanceScheduled`
+- `EscrowCreated`
+- `EscrowApproved`
+- `EscrowReleased`
+- `VoucherIssued`
+- `VoucherApplied`
 
 Events start with `pending` status and can later be marked `published` by a
 worker. The table is tenant-isolated with PostgreSQL RLS. The current API

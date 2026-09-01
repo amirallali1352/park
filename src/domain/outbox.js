@@ -1,7 +1,12 @@
 export const DomainEventType = Object.freeze({
   BOOKING_CONFIRMED: "BookingConfirmed",
   SAMPLE_RECEIVED: "SampleReceived",
-  MAINTENANCE_SCHEDULED: "MaintenanceScheduled"
+  MAINTENANCE_SCHEDULED: "MaintenanceScheduled",
+  ESCROW_CREATED: "EscrowCreated",
+  ESCROW_APPROVED: "EscrowApproved",
+  ESCROW_RELEASED: "EscrowReleased",
+  VOUCHER_ISSUED: "VoucherIssued",
+  VOUCHER_APPLIED: "VoucherApplied"
 });
 
 export class OutboxError extends Error {

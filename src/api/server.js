@@ -187,6 +187,10 @@ export function createApiServer(
           action: "escrow.created", resourceType: "escrow", resourceId: escrow.id,
           payload: escrow
         }));
+        await outboxRepository.save(createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.ESCROW_CREATED,
+          aggregateId: escrow.id, payload: escrow
+        }));
         return sendJson(response, 201, escrow);
       }
 
@@ -209,6 +213,10 @@ export function createApiServer(
           id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
           action: "voucher.created", resourceType: "voucher", resourceId: voucher.id,
           payload: voucher
+        }));
+        await outboxRepository.save(createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.VOUCHER_ISSUED,
+          aggregateId: voucher.id, payload: voucher
         }));
         return sendJson(response, 201, voucher);
       }
@@ -252,6 +260,18 @@ export function createApiServer(
           action: "voucher.applied", resourceType: "voucher", resourceId: voucher.id,
           payload: { escrowId: escrow.id, appliedAmount: result.appliedAmount, remainingAmount: result.remainingAmount }
         }));
+        await outboxRepository.save(createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.VOUCHER_APPLIED,
+          aggregateId: voucher.id,
+          payload: {
+            voucherId: voucher.id,
+            escrowId: escrow.id,
+            appliedAmount: result.appliedAmount,
+            remainingAmount: result.remainingAmount,
+            status: result.voucher.status,
+            actorId
+          }
+        }));
         return sendJson(response, 200, { ...result, escrow });
       }
 
@@ -272,6 +292,13 @@ export function createApiServer(
           id: randomUUID(), tenantId, actorId,
           action: `escrow.${escrowActionMatch[2]}d`, resourceType: "escrow",
           resourceId: updated.id, payload: updated
+        }));
+        await outboxRepository.save(createDomainEvent({
+          id: randomUUID(), tenantId,
+          type: escrowActionMatch[2] === "approve"
+            ? DomainEventType.ESCROW_APPROVED
+            : DomainEventType.ESCROW_RELEASED,
+          aggregateId: updated.id, payload: updated
         }));
         return sendJson(response, 200, updated);
       }
