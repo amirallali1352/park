@@ -74,6 +74,12 @@ test("serves the initial Pilot dashboard shell", async () => {
     assert.match(html, /STP OS Pilot Dashboard/);
     assert.match(html, /\/api\/v1\/pilot\/summary/);
     assert.match(html, /x-tenant-id/);
+    assert.match(html, /Register Equipment/);
+    assert.match(html, /Create Sample/);
+    assert.match(html, /Create Booking/);
+    assert.match(html, /\/api\/v1\/equipment/);
+    assert.match(html, /\/api\/v1\/samples/);
+    assert.match(html, /\/api\/v1\/bookings/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

@@ -98,10 +98,50 @@ function pilotDashboardHtml() {
       <article class="card"><span class="muted">Utilization (min)</span><div id="utilization" class="value">—</div></article>
       <article class="card"><span class="muted">R&amp;D spend</span><div id="rd-spend" class="value">—</div></article>
     </section>
+    <section class="grid actions">
+      <form id="equipment-form" class="card">
+        <h2>Register Equipment</h2>
+        <input name="id" placeholder="Equipment ID" required>
+        <input name="name" placeholder="Name, e.g. HPLC" required>
+        <input name="type" placeholder="Type, e.g. hplc" required>
+        <button type="submit">Register</button>
+      </form>
+      <form id="sample-form" class="card">
+        <h2>Create Sample</h2>
+        <input name="id" placeholder="Sample ID" required>
+        <input name="name" placeholder="Sample name" required>
+        <input name="barcode" placeholder="Barcode" required>
+        <button type="submit">Create</button>
+      </form>
+      <form id="booking-form" class="card">
+        <h2>Create Booking</h2>
+        <input name="id" placeholder="Booking ID" required>
+        <input name="equipmentId" placeholder="Equipment ID" required>
+        <input name="startAt" type="datetime-local" required>
+        <input name="endAt" type="datetime-local" required>
+        <button type="submit">Book</button>
+      </form>
+    </section>
   </main>
   <script>
     const form = document.querySelector("#tenant-form");
     const message = document.querySelector("#message");
+    let accessToken = null;
+    const jsonHeaders = () => ({
+      "content-type": "application/json",
+      "x-tenant-id": document.querySelector("#tenant-id").value.trim(),
+      ...(accessToken ? { authorization: "Bearer " + accessToken } : {})
+    });
+    const formData = (element) => Object.fromEntries(new FormData(element).entries());
+    async function postForm(path, element) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify(formData(element))
+      });
+      if (!response.ok) throw new Error("Operation failed. Check the form and permissions.");
+      return response.json();
+    }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const tenantId = document.querySelector("#tenant-id").value.trim();
@@ -118,7 +158,8 @@ function pilotDashboardHtml() {
           });
           if (!login.ok) throw new Error("Login failed. Check tenant, email and password.");
           const loginData = await login.json();
-          headers.authorization = "Bearer " + loginData.accessToken;
+          accessToken = loginData.accessToken;
+          headers.authorization = "Bearer " + accessToken;
         }
         const response = await fetch("/api/v1/pilot/summary", {
           headers
@@ -136,6 +177,22 @@ function pilotDashboardHtml() {
         message.textContent = error.message;
       }
     });
+    for (const [id, path] of [
+      ["equipment-form", "/api/v1/equipment"],
+      ["sample-form", "/api/v1/samples"],
+      ["booking-form", "/api/v1/bookings"]
+    ]) {
+      document.querySelector("#" + id).addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          await postForm(path, event.currentTarget);
+          message.textContent = "Operation completed successfully.";
+          form.requestSubmit();
+        } catch (error) {
+          message.textContent = error.message;
+        }
+      });
+    }
   </script>
 </body>
 </html>`;
