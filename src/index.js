@@ -1,10 +1,23 @@
 import { createApiServer } from "./api/server.js";
 import { createProductionRepository } from "./infrastructure/production-repository.js";
+import { createObjectStorage } from "./infrastructure/create-object-storage.js";
+import { EncryptedFileService } from "./security/encrypted-file-service.js";
+import { EnvelopeEncryption } from "./security/encryption.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const authRequired = process.env.AUTH_REQUIRED === "true";
 const repositories = process.env.DATABASE_URL
   ? createProductionRepository()
+  : undefined;
+const objectStorage = process.env.S3_ENDPOINT
+  ? createObjectStorage()
+  : undefined;
+const fileService = objectStorage && process.env.ENCRYPTION_KEK
+  ? new EncryptedFileService({
+    encryption: new EnvelopeEncryption({ kek: process.env.ENCRYPTION_KEK }),
+    storage: objectStorage,
+    bucket: process.env.S3_BUCKET ?? "stp-encrypted-files"
+  })
   : undefined;
 const server = createApiServer(repositories?.identity, {
   authRequired,
@@ -14,7 +27,9 @@ const server = createApiServer(repositories?.identity, {
   facilityRepository: repositories?.facility,
   sampleRepository: repositories?.samples,
   outboxRepository: repositories?.outbox,
-  auditRepository: repositories?.audit
+  auditRepository: repositories?.audit,
+  fileService,
+  encryptionKek: process.env.ENCRYPTION_KEK
 });
 server.listen(port, "0.0.0.0", () => {
   console.log(

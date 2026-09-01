@@ -18,6 +18,8 @@ import { AuditError, createAuditEvent } from "../security/audit.js";
 import { InMemoryAuditRepository } from "../infrastructure/in-memory-audit-repository.js";
 import { buildMerkleProof, merkleRoot } from "../security/merkle.js";
 import { EncryptionError, EnvelopeEncryption } from "../security/encryption.js";
+import { EncryptedFileService } from "../security/encrypted-file-service.js";
+import { InMemoryObjectStorage } from "../infrastructure/in-memory-object-storage.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -62,6 +64,10 @@ function errorResponse(error) {
     const status = ["CONTEXT_MISMATCH", "TENANT_ACCESS_DENIED"].includes(error.code) ? 403 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error?.name === "EncryptedFileError") {
+    const status = error.code === "FILE_NOT_FOUND" ? 404 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -79,7 +85,11 @@ export function createApiServer(
     sampleRepository = new InMemorySampleRepository(),
     outboxRepository = new InMemoryOutboxRepository(),
     auditRepository = new InMemoryAuditRepository(),
-    encryptionKek = process.env.ENCRYPTION_KEK
+    encryptionKek = process.env.ENCRYPTION_KEK,
+    fileService = encryptionKek ? new EncryptedFileService({
+      encryption: new EnvelopeEncryption({ kek: encryptionKek }),
+      storage: new InMemoryObjectStorage()
+    }) : null
   } = {}
 ) {
   const encryption = encryptionKek ? new EnvelopeEncryption({ kek: encryptionKek }) : null;
@@ -341,6 +351,49 @@ export function createApiServer(
         const { envelope } = await readJson(request);
         const plaintext = encryption.decrypt(envelope, { tenantId, objectId: envelope?.objectId });
         return sendJson(response, 200, { contentBase64: plaintext.toString("base64") });
+      }
+
+      if (url.pathname === "/api/v1/files" && method === "POST") {
+        if (!fileService) throw new EncryptionError("FILE_STORAGE is not configured.", "ENCRYPTION_NOT_CONFIGURED");
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const { objectId, contentType, contentBase64 } = await readJson(request);
+        if (typeof contentBase64 !== "string") {
+          throw new EncryptionError("contentBase64 is required.", "INVALID_CONTENT");
+        }
+        return sendJson(response, 201, await fileService.put({
+          tenantId,
+          objectId,
+          contentType,
+          content: Buffer.from(contentBase64, "base64")
+        }));
+      }
+
+      const fileMatch = url.pathname.match(/^\/api\/v1\/files\/([^/]+)$/);
+      if (fileMatch && method === "GET") {
+        if (!fileService) throw new EncryptionError("FILE_STORAGE is not configured.", "ENCRYPTION_NOT_CONFIGURED");
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const file = await fileService.get({ tenantId, objectId: fileMatch[1] });
+        return sendJson(response, 200, {
+          ...file.metadata,
+          contentBase64: file.content.toString("base64")
+        });
+      }
+
+      if (fileMatch && method === "DELETE") {
+        if (!fileService) throw new EncryptionError("FILE_STORAGE is not configured.", "ENCRYPTION_NOT_CONFIGURED");
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        await fileService.remove({ tenantId, objectId: fileMatch[1] });
+        response.writeHead(204);
+        return response.end();
       }
 
       return sendJson(response, 404, {

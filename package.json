@@ -11,6 +11,7 @@
     "db:up": "docker compose up -d postgres"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1123.0",
     "pg": "^8.16.3"
   }
 }
