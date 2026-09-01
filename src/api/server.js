@@ -16,6 +16,7 @@ import { InMemoryOutboxRepository } from "../infrastructure/in-memory-outbox-rep
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 import { createAccessToken } from "../security/auth.js";
 import { hashPassword, verifyPassword } from "../security/password.js";
+import { LoginRateLimiter } from "../security/login-rate-limiter.js";
 import { AuditError, createAuditEvent } from "../security/audit.js";
 import { InMemoryAuditRepository } from "../infrastructure/in-memory-audit-repository.js";
 import { buildMerkleProof, merkleRoot } from "../security/merkle.js";
@@ -147,12 +148,16 @@ export function createApiServer(
     analyticsSink = null,
     financeRepository = new InMemoryFinanceRepository(),
     voucherRepository = new InMemoryVoucherRepository(),
+    loginRateLimit = {},
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
     }) : null
   } = {}
 ) {
+  const loginRateLimiter = loginRateLimit instanceof LoginRateLimiter
+    ? loginRateLimit
+    : new LoginRateLimiter(loginRateLimit);
   const encryption = encryptionKek ? new EnvelopeEncryption({ kek: encryptionKek }) : null;
   return createServer(async (request, response) => {
     try {
@@ -179,6 +184,17 @@ export function createApiServer(
       if (url.pathname === "/api/v1/auth/login" && method === "POST") {
         const { email, password, tenantId } = await readJson(request);
         const normalizedEmail = email?.toLowerCase();
+        const rateLimitKey = tenantId && normalizedEmail ? `${tenantId}:${normalizedEmail}` : null;
+        const rateLimit = rateLimitKey ? loginRateLimiter.check(rateLimitKey) : null;
+        if (rateLimit && !rateLimit.allowed) {
+          response.setHeader("retry-after", String(rateLimit.retryAfterSeconds));
+          return sendJson(response, 429, {
+            error: {
+              code: "LOGIN_RATE_LIMITED",
+              message: "Too many login attempts. Try again later."
+            }
+          });
+        }
         const user = normalizedEmail && tenantId
           ? await repository.findUserByEmail(normalizedEmail, tenantId)
           : null;
@@ -186,6 +202,7 @@ export function createApiServer(
           ? await verifyPassword(password, user.passwordHash)
           : false;
         if (!valid) {
+          if (rateLimitKey) loginRateLimiter.recordFailure(rateLimitKey);
           if (tenantId && normalizedEmail) {
             await auditRepository.append(createAuditEvent({
               id: randomUUID(), tenantId, actorId: normalizedEmail,
@@ -195,6 +212,7 @@ export function createApiServer(
           }
           throw new AuthError("Email or password is invalid.", "INVALID_CREDENTIALS");
         }
+        if (rateLimitKey) loginRateLimiter.reset(rateLimitKey);
         const accessToken = createAccessToken(
           { sub: user.id, tenantId: user.tenantId, role: user.role },
           { secret: authSecret }
