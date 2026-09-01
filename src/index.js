@@ -30,6 +30,7 @@ const server = createApiServer(repositories?.identity, {
   outboxRepository: repositories?.outbox,
   auditRepository: repositories?.audit,
   legalRepository: repositories?.legal,
+  marketplaceRepository: repositories?.marketplace,
   fileService,
   requireLegalWrapper: process.env.REQUIRE_LEGAL_WRAPPER === "true",
   encryptionKek: process.env.ENCRYPTION_KEK

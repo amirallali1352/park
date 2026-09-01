@@ -23,6 +23,8 @@ import { InMemoryObjectStorage } from "../infrastructure/in-memory-object-storag
 import { LegalError, createContract, signContract } from "../domain/legal.js";
 import { InMemoryLegalRepository } from "../infrastructure/in-memory-legal-repository.js";
 import { DigitalSignatureError } from "../security/digital-signature.js";
+import { MarketplaceError, closeListing, createListing } from "../domain/marketplace.js";
+import { InMemoryMarketplaceRepository } from "../infrastructure/in-memory-marketplace-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -79,6 +81,10 @@ function errorResponse(error) {
   if (error instanceof DigitalSignatureError) {
     return { status: 400, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof MarketplaceError) {
+    const status = error.code === "LISTING_NOT_FOUND" ? 404 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -100,6 +106,7 @@ export function createApiServer(
     legalRepository = new InMemoryLegalRepository(),
     requireLegalWrapper = false,
     signatureProvider = null,
+    marketplaceRepository = new InMemoryMarketplaceRepository(),
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -408,6 +415,51 @@ export function createApiServer(
           payload: contract
         }));
         return sendJson(response, 201, contract);
+      }
+
+      if (url.pathname === "/api/v1/marketplace/listings" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const listing = createListing({ ...(await readJson(request)), tenantId });
+        await marketplaceRepository.save(listing);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "marketplace.listing.created", resourceType: "listing", resourceId: listing.id,
+          payload: listing
+        }));
+        return sendJson(response, 201, listing);
+      }
+
+      if (url.pathname === "/api/v1/marketplace/listings" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await marketplaceRepository.list(tenantId, {
+          type: url.searchParams.get("type") ?? undefined,
+          tag: url.searchParams.get("tag") ?? undefined,
+          status: url.searchParams.get("status") ?? "open"
+        }));
+      }
+
+      const closeListingMatch = url.pathname.match(/^\/api\/v1\/marketplace\/listings\/([^/]+)\/close$/);
+      if (closeListingMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const listing = await marketplaceRepository.find(tenantId, closeListingMatch[1]);
+        if (!listing) throw new MarketplaceError("Listing was not found.", "LISTING_NOT_FOUND");
+        const closed = closeListing(listing);
+        await marketplaceRepository.save(closed);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "marketplace.listing.closed", resourceType: "listing", resourceId: closed.id,
+          payload: closed
+        }));
+        return sendJson(response, 200, closed);
       }
 
       if (url.pathname === "/api/v1/contracts" && method === "GET") {
