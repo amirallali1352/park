@@ -17,6 +17,7 @@ import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
 import { AuditError, createAuditEvent } from "../security/audit.js";
 import { InMemoryAuditRepository } from "../infrastructure/in-memory-audit-repository.js";
 import { buildMerkleProof, merkleRoot } from "../security/merkle.js";
+import { EncryptionError, EnvelopeEncryption } from "../security/encryption.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -57,6 +58,10 @@ function errorResponse(error) {
   if (error instanceof AuditError) {
     return { status: 500, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof EncryptionError) {
+    const status = ["CONTEXT_MISMATCH", "TENANT_ACCESS_DENIED"].includes(error.code) ? 403 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -73,9 +78,11 @@ export function createApiServer(
     facilityRepository = new InMemoryFacilityRepository(),
     sampleRepository = new InMemorySampleRepository(),
     outboxRepository = new InMemoryOutboxRepository(),
-    auditRepository = new InMemoryAuditRepository()
+    auditRepository = new InMemoryAuditRepository(),
+    encryptionKek = process.env.ENCRYPTION_KEK
   } = {}
 ) {
+  const encryption = encryptionKek ? new EnvelopeEncryption({ kek: encryptionKek }) : null;
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://localhost");
@@ -306,6 +313,34 @@ export function createApiServer(
           root: merkleRoot(hashes),
           proof: events[index] ? buildMerkleProof(hashes, index) : []
         });
+      }
+
+      if (url.pathname === "/api/v1/files/encrypt" && method === "POST") {
+        if (!encryption) throw new EncryptionError("ENCRYPTION_KEK is not configured.", "ENCRYPTION_NOT_CONFIGURED");
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const { objectId, contentBase64 } = await readJson(request);
+        if (typeof contentBase64 !== "string") {
+          throw new EncryptionError("contentBase64 is required.", "INVALID_CONTENT");
+        }
+        const envelope = encryption.encrypt(Buffer.from(contentBase64, "base64"), {
+          tenantId,
+          objectId
+        });
+        return sendJson(response, 201, envelope);
+      }
+
+      if (url.pathname === "/api/v1/files/decrypt" && method === "POST") {
+        if (!encryption) throw new EncryptionError("ENCRYPTION_KEK is not configured.", "ENCRYPTION_NOT_CONFIGURED");
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const { envelope } = await readJson(request);
+        const plaintext = encryption.decrypt(envelope, { tenantId, objectId: envelope?.objectId });
+        return sendJson(response, 200, { contentBase64: plaintext.toString("base64") });
       }
 
       return sendJson(response, 404, {
