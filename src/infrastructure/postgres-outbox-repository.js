@@ -51,11 +51,14 @@ export class PostgresOutboxRepository {
     return result.rows.map(mapEvent);
   }
 
-  async markPublished(id, publishedAt = new Date().toISOString()) {
-    const result = await this.#client.query(
+  async markPublished(id, publishedAt = new Date().toISOString(), tenantId) {
+    const operation = (client) => client.query(
       "UPDATE outbox_events SET status = 'published', published_at = $2 WHERE id = $1 RETURNING id, tenant_id, event_type, version, aggregate_id, payload, occurred_at, status, published_at",
       [id, publishedAt]
     );
+    const result = tenantId
+      ? await this.#withTenantContext(tenantId, operation)
+      : await operation(this.#client);
     return result.rows[0] ? mapEvent(result.rows[0]) : null;
   }
 }
