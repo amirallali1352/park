@@ -58,24 +58,37 @@ function sendHtml(response, status, body) {
 
 function pilotDashboardHtml() {
   return `<!doctype html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>STP OS Pilot Dashboard</title>
   <style>
-    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    :root { color-scheme: dark; font-family: Tahoma, Arial, sans-serif; }
+    * { box-sizing: border-box; }
     body { margin: 0; background: #0d1726; color: #e7eef8; }
-    main { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+    main { width: min(1100px, 100%); margin: 0 auto; padding: 32px 20px; }
     h1 { margin-bottom: 8px; } .muted { color: #9fb0c5; }
-    form { display: flex; gap: 8px; margin: 24px 0; }
-    input, button { border: 1px solid #38506d; border-radius: 8px; padding: 10px 12px; }
-    input { flex: 1; background: #122239; color: inherit; }
+    #tenant-form { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 8px; margin: 24px 0; }
+    input, button { width: 100%; min-width: 0; border: 1px solid #38506d; border-radius: 8px; padding: 10px 12px; font: inherit; }
+    input { background: #122239; color: inherit; }
     button { background: #2d83f7; color: white; cursor: pointer; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap: 14px; }
-    .card { background: #14263d; border: 1px solid #284665; border-radius: 12px; padding: 18px; }
+    .card { min-width: 0; background: #14263d; border: 1px solid #284665; border-radius: 12px; padding: 18px; }
     .value { font-size: 30px; font-weight: 700; margin-top: 8px; }
     #message { min-height: 24px; }
+    .actions { align-items: start; margin-top: 24px; }
+    .actions form { display: grid; gap: 10px; margin: 0; }
+    .actions h2 { margin: 0 0 4px; font-size: 20px; }
+    @media (max-width: 760px) {
+      main { padding: 20px 14px; }
+      #tenant-form { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .actions { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 420px) {
+      .grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -84,10 +97,10 @@ function pilotDashboardHtml() {
     <h1>STP OS Pilot Dashboard</h1>
     <p class="muted">Equipment, bookings, samples and tenant KPIs.</p>
     <form id="tenant-form">
-      <input id="tenant-id" placeholder="Tenant ID, e.g. pilot-park-1" required>
-      <input id="email" type="email" placeholder="Admin email (optional)">
-      <input id="password" type="password" placeholder="Password (optional)">
-      <button type="submit">Load Pilot</button>
+      <input id="tenant-id" placeholder="شناسه Tenant، مانند pilot-park-1" required>
+      <input id="email" type="email" placeholder="ایمیل مدیر (اختیاری)">
+      <input id="password" type="password" placeholder="رمز عبور (اختیاری)">
+      <button type="submit">بارگذاری</button>
     </form>
     <p id="message" class="muted">Enter a tenant ID to load data.</p>
     <section class="grid" aria-live="polite">
@@ -101,25 +114,25 @@ function pilotDashboardHtml() {
     <section class="grid actions">
       <form id="equipment-form" class="card">
         <h2>Register Equipment</h2>
-        <input name="id" placeholder="Equipment ID" required>
-        <input name="name" placeholder="Name, e.g. HPLC" required>
-        <input name="type" placeholder="Type, e.g. hplc" required>
-        <button type="submit">Register</button>
+        <input name="id" placeholder="شناسه تجهیز" required>
+        <input name="name" placeholder="نام، مانند HPLC" required>
+        <input name="type" placeholder="نوع، مانند hplc" required>
+        <button type="submit">ثبت تجهیز</button>
       </form>
       <form id="sample-form" class="card">
         <h2>Create Sample</h2>
-        <input name="id" placeholder="Sample ID" required>
-        <input name="name" placeholder="Sample name" required>
-        <input name="barcode" placeholder="Barcode" required>
-        <button type="submit">Create</button>
+        <input name="id" placeholder="شناسه نمونه" required>
+        <input name="name" placeholder="نام نمونه" required>
+        <input name="barcode" placeholder="بارکد" required>
+        <button type="submit">ثبت نمونه</button>
       </form>
       <form id="booking-form" class="card">
         <h2>Create Booking</h2>
-        <input name="id" placeholder="Booking ID" required>
-        <input name="equipmentId" placeholder="Equipment ID" required>
+        <input name="id" placeholder="شناسه رزرو" required>
+        <input name="equipmentId" placeholder="شناسه تجهیز" required>
         <input name="startAt" type="datetime-local" required>
         <input name="endAt" type="datetime-local" required>
-        <button type="submit">Book</button>
+        <button type="submit">ایجاد رزرو</button>
       </form>
     </section>
   </main>

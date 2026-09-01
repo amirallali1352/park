@@ -80,6 +80,9 @@ test("serves the initial Pilot dashboard shell", async () => {
     assert.match(html, /\/api\/v1\/equipment/);
     assert.match(html, /\/api\/v1\/samples/);
     assert.match(html, /\/api\/v1\/bookings/);
+    assert.match(html, /dir="rtl"/);
+    assert.match(html, /#tenant-form/);
+    assert.match(html, /grid-template-columns: repeat\(auto-fit/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
