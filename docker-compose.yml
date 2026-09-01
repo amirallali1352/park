@@ -44,6 +44,23 @@ services:
       timeout: 5s
       retries: 10
 
+  outbox-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://stp_os:change-me@postgres:5432/stp_os
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_CLIENT_ID: stp-os-outbox-worker
+      OUTBOX_POLL_INTERVAL_MS: 5000
+      OUTBOX_BATCH_SIZE: 100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"

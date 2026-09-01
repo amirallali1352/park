@@ -39,3 +39,26 @@ test("leaves events pending when publishing fails", async () => {
   assert.deepEqual(result, { scanned: 1, published: 0, failed: 1 });
   assert.equal((await outbox.find("event-2")).status, "pending");
 });
+
+test("publishes a duplicated pending event only once per worker cycle", async () => {
+  let publishCount = 0;
+  const duplicateOutbox = {
+    async listPending() {
+      return [event("event-3"), event("event-3")];
+    },
+    async markPublished(id) {
+      return { id, status: "published" };
+    }
+  };
+  const bus = {
+    async publish() {
+      publishCount += 1;
+    }
+  };
+  const worker = new OutboxWorker({ outboxRepository: duplicateOutbox, eventBus: bus });
+
+  const result = await worker.runOnce();
+
+  assert.deepEqual(result, { scanned: 2, published: 1, failed: 0, skipped: 1 });
+  assert.equal(publishCount, 1);
+});

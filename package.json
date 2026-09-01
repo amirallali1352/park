@@ -8,12 +8,14 @@
     "test": "node --test",
     "test:watch": "node --test --watch",
     "start": "node src/index.js",
+    "start:worker": "node src/worker.js",
     "db:up": "docker compose up -d postgres"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",
     "@clickhouse/client": "^1.23.1",
     "@opensearch-project/opensearch": "^3.6.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "kafkajs": "^2.2.4"
   }
 }

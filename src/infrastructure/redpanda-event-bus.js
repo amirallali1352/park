@@ -13,7 +13,11 @@ export class RedpandaEventBus {
       topic: event.type,
       messages: [{
         key: event.aggregateId,
-        value: JSON.stringify(event)
+        value: JSON.stringify(event),
+        headers: {
+          "event-id": event.id,
+          "tenant-id": event.tenantId
+        }
       }]
     });
   }

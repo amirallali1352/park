@@ -20,7 +20,14 @@ export class OutboxWorker {
     const events = await this.#outboxRepository.listPending(this.#batchSize);
     let published = 0;
     let failed = 0;
+    let skipped = 0;
+    const seen = new Set();
     for (const event of events) {
+      if (seen.has(event.id)) {
+        skipped += 1;
+        continue;
+      }
+      seen.add(event.id);
       try {
         await this.#eventBus.publish(event);
         await this.#outboxRepository.markPublished(event.id, undefined, event.tenantId);
@@ -29,6 +36,8 @@ export class OutboxWorker {
         failed += 1;
       }
     }
-    return { scanned: events.length, published, failed };
+    return skipped > 0
+      ? { scanned: events.length, published, failed, skipped }
+      : { scanned: events.length, published, failed };
   }
 }
