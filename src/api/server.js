@@ -37,6 +37,8 @@ import { FinanceError, approveEscrow, createEscrow, releaseEscrow } from "../dom
 import { InMemoryFinanceRepository } from "../infrastructure/in-memory-finance-repository.js";
 import { VoucherError, applyVoucher, createVoucher } from "../domain/voucher.js";
 import { InMemoryVoucherRepository } from "../infrastructure/in-memory-voucher-repository.js";
+import { CertificationError, createCertification, isCertificationValid } from "../domain/certification.js";
+import { InMemoryCertificationRepository } from "../infrastructure/in-memory-certification-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -113,6 +115,10 @@ function errorResponse(error) {
       ["VOUCHER_EXHAUSTED", "VOUCHER_AMOUNT_EXCEEDED"].includes(error.code) ? 409 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof CertificationError) {
+    const status = error.code === "CERTIFICATION_REQUIRED" ? 403 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -148,6 +154,7 @@ export function createApiServer(
     analyticsSink = null,
     financeRepository = new InMemoryFinanceRepository(),
     voucherRepository = new InMemoryVoucherRepository(),
+    certificationRepository = new InMemoryCertificationRepository(),
     loginRateLimit = {},
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
@@ -451,6 +458,38 @@ export function createApiServer(
         return sendJson(response, 200, await facilityRepository.listEquipment(tenantId));
       }
 
+      const certificationMatch = url.pathname.match(
+        /^\/api\/v1\/equipment\/([^/]+)\/certifications$/
+      );
+      if (certificationMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
+        const certification = createCertification({
+          ...(await readJson(request)),
+          equipmentId: certificationMatch[1],
+          tenantId
+        });
+        await certificationRepository.save(certification);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "equipment.certification.created", resourceType: "certification",
+          resourceId: certification.id, payload: certification
+        }));
+        return sendJson(response, 201, certification);
+      }
+
+      if (certificationMatch && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200,
+          await certificationRepository.list(tenantId, certificationMatch[1]));
+      }
+
       if (url.pathname === "/api/v1/bookings" && method === "POST") {
         const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
         if (!tenantId) {
@@ -464,6 +503,14 @@ export function createApiServer(
           tenantId,
           userId: claims?.sub ?? payload.userId
         });
+        const equipment = (await facilityRepository.listEquipment(tenantId))
+          .find((item) => item.id === booking.equipmentId);
+        if (equipment?.accessModel === "certified_self_service" &&
+            !(await certificationRepository.findValid(tenantId, booking.equipmentId, booking.userId))) {
+          throw new CertificationError(
+            "A valid equipment certification is required.", "CERTIFICATION_REQUIRED"
+          );
+        }
         await facilityRepository.saveBooking(booking);
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? booking.userId,

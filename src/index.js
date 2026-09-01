@@ -46,6 +46,7 @@ const server = createApiServer(repositories?.identity, {
   consortiumRepository: repositories?.consortium,
   financeRepository: repositories?.finance,
   voucherRepository: repositories?.voucher,
+  certificationRepository: repositories?.certification,
   embeddingProvider,
   vectorIndex,
   analyticsSink,

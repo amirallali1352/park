@@ -10,6 +10,7 @@ import { PostgresMarketplaceRepository } from "./postgres-marketplace-repository
 import { PostgresConsortiumRepository } from "./postgres-consortium-repository.js";
 import { PostgresFinanceRepository } from "./postgres-finance-repository.js";
 import { PostgresVoucherRepository } from "./postgres-voucher-repository.js";
+import { PostgresCertificationRepository } from "./postgres-certification-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
 
 export function createProductionRepository({
@@ -28,6 +29,7 @@ export function createProductionRepository({
     marketplace: new PostgresMarketplaceRepository(pool),
     consortium: new PostgresConsortiumRepository(pool),
     finance: new PostgresFinanceRepository(pool),
-    voucher: new PostgresVoucherRepository(pool)
+    voucher: new PostgresVoucherRepository(pool),
+    certification: new PostgresCertificationRepository(pool)
   };
 }
