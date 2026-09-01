@@ -131,6 +131,23 @@ function requireRoles(claims, authRequired, roles) {
   }
 }
 
+async function saveWithOutbox({
+  unitOfWork, tenantId, aggregateRepository, aggregate, event, outboxRepository
+}) {
+  if (unitOfWork &&
+      typeof aggregateRepository.saveInTransaction === "function" &&
+      typeof outboxRepository.saveInTransaction === "function") {
+    return unitOfWork.run(tenantId, async (client) => {
+      const saved = await aggregateRepository.saveInTransaction(client, aggregate);
+      await outboxRepository.saveInTransaction(client, event);
+      return saved;
+    });
+  }
+  const saved = await aggregateRepository.save(aggregate);
+  await outboxRepository.save(event);
+  return saved;
+}
+
 export function createApiServer(
   repository = new InMemoryIdentityRepository(),
   {
@@ -154,6 +171,7 @@ export function createApiServer(
     analyticsSink = null,
     financeRepository = new InMemoryFinanceRepository(),
     voucherRepository = new InMemoryVoucherRepository(),
+    unitOfWork = null,
     certificationRepository = new InMemoryCertificationRepository(),
     loginRateLimit = {},
     fileService = encryptionKek ? new EncryptedFileService({
@@ -266,15 +284,18 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         const escrow = createEscrow({ ...(await readJson(request)), tenantId });
-        await financeRepository.save(escrow);
+        const escrowEvent = createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.ESCROW_CREATED,
+          aggregateId: escrow.id, payload: escrow
+        });
+        await saveWithOutbox({
+          unitOfWork, tenantId, aggregateRepository: financeRepository,
+          aggregate: escrow, event: escrowEvent, outboxRepository
+        });
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
           action: "escrow.created", resourceType: "escrow", resourceId: escrow.id,
           payload: escrow
-        }));
-        await outboxRepository.save(createDomainEvent({
-          id: randomUUID(), tenantId, type: DomainEventType.ESCROW_CREATED,
-          aggregateId: escrow.id, payload: escrow
         }));
         return sendJson(response, 201, escrow);
       }
@@ -294,15 +315,18 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         const voucher = createVoucher({ ...(await readJson(request)), tenantId });
-        await voucherRepository.save(voucher);
+        const voucherEvent = createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.VOUCHER_ISSUED,
+          aggregateId: voucher.id, payload: voucher
+        });
+        await saveWithOutbox({
+          unitOfWork, tenantId, aggregateRepository: voucherRepository,
+          aggregate: voucher, event: voucherEvent, outboxRepository
+        });
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
           action: "voucher.created", resourceType: "voucher", resourceId: voucher.id,
           payload: voucher
-        }));
-        await outboxRepository.save(createDomainEvent({
-          id: randomUUID(), tenantId, type: DomainEventType.VOUCHER_ISSUED,
-          aggregateId: voucher.id, payload: voucher
         }));
         return sendJson(response, 201, voucher);
       }
@@ -341,23 +365,23 @@ export function createApiServer(
           amount: Number(amount),
           actorId
         });
-        await voucherRepository.save(result.voucher);
+        const voucherEvent = createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.VOUCHER_APPLIED,
+          aggregateId: voucher.id,
+          payload: {
+            voucherId: voucher.id, escrowId: escrow.id,
+            appliedAmount: result.appliedAmount, remainingAmount: result.remainingAmount,
+            status: result.voucher.status, actorId
+          }
+        });
+        await saveWithOutbox({
+          unitOfWork, tenantId, aggregateRepository: voucherRepository,
+          aggregate: result.voucher, event: voucherEvent, outboxRepository
+        });
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId,
           action: "voucher.applied", resourceType: "voucher", resourceId: voucher.id,
           payload: { escrowId: escrow.id, appliedAmount: result.appliedAmount, remainingAmount: result.remainingAmount }
-        }));
-        await outboxRepository.save(createDomainEvent({
-          id: randomUUID(), tenantId, type: DomainEventType.VOUCHER_APPLIED,
-          aggregateId: voucher.id,
-          payload: {
-            voucherId: voucher.id,
-            escrowId: escrow.id,
-            appliedAmount: result.appliedAmount,
-            remainingAmount: result.remainingAmount,
-            status: result.voucher.status,
-            actorId
-          }
         }));
         return sendJson(response, 200, { ...result, escrow });
       }
@@ -375,18 +399,21 @@ export function createApiServer(
         const updated = escrowActionMatch[2] === "approve"
           ? approveEscrow(escrow, { actorId })
           : releaseEscrow(escrow, { actorId });
-        await financeRepository.save(updated);
-        await auditRepository.append(createAuditEvent({
-          id: randomUUID(), tenantId, actorId,
-          action: `escrow.${escrowActionMatch[2]}d`, resourceType: "escrow",
-          resourceId: updated.id, payload: updated
-        }));
-        await outboxRepository.save(createDomainEvent({
+        const escrowEvent = createDomainEvent({
           id: randomUUID(), tenantId,
           type: escrowActionMatch[2] === "approve"
             ? DomainEventType.ESCROW_APPROVED
             : DomainEventType.ESCROW_RELEASED,
           aggregateId: updated.id, payload: updated
+        });
+        await saveWithOutbox({
+          unitOfWork, tenantId, aggregateRepository: financeRepository,
+          aggregate: updated, event: escrowEvent, outboxRepository
+        });
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId,
+          action: `escrow.${escrowActionMatch[2]}d`, resourceType: "escrow",
+          resourceId: updated.id, payload: updated
         }));
         return sendJson(response, 200, updated);
       }
@@ -511,15 +538,22 @@ export function createApiServer(
             "A valid equipment certification is required.", "CERTIFICATION_REQUIRED"
           );
         }
-        await facilityRepository.saveBooking(booking);
+        const bookingEvent = createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
+          aggregateId: booking.id, payload: booking
+        });
+        await saveWithOutbox({
+          unitOfWork, tenantId, aggregateRepository: {
+            save: (aggregate) => facilityRepository.saveBooking(aggregate),
+            saveInTransaction: (client, aggregate) =>
+              facilityRepository.saveBookingInTransaction(client, aggregate)
+          },
+          aggregate: booking, event: bookingEvent, outboxRepository
+        });
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? booking.userId,
           action: "booking.created", resourceType: "booking", resourceId: booking.id,
           payload: booking
-        }));
-        await outboxRepository.save(createDomainEvent({
-          id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
-          aggregateId: booking.id, payload: booking
         }));
         const analyticsEvent = {
           id: randomUUID(), tenantId, type: DomainEventType.BOOKING_CONFIRMED,
@@ -555,15 +589,22 @@ export function createApiServer(
           equipmentId: maintenanceMatch[1],
           tenantId
         });
-        await facilityRepository.saveMaintenance(window);
+        const maintenanceEvent = createDomainEvent({
+          id: randomUUID(), tenantId, type: DomainEventType.MAINTENANCE_SCHEDULED,
+          aggregateId: window.id, payload: window
+        });
+        await saveWithOutbox({
+          unitOfWork, tenantId, aggregateRepository: {
+            save: (aggregate) => facilityRepository.saveMaintenance(aggregate),
+            saveInTransaction: (client, aggregate) =>
+              facilityRepository.saveMaintenanceInTransaction(client, aggregate)
+          },
+          aggregate: window, event: maintenanceEvent, outboxRepository
+        });
         await auditRepository.append(createAuditEvent({
           id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
           action: "maintenance.scheduled", resourceType: "maintenance", resourceId: window.id,
           payload: window
-        }));
-        await outboxRepository.save(createDomainEvent({
-          id: randomUUID(), tenantId, type: DomainEventType.MAINTENANCE_SCHEDULED,
-          aggregateId: window.id, payload: window
         }));
         return sendJson(response, 201, window);
       }
@@ -608,17 +649,26 @@ export function createApiServer(
           tenantId,
           actorId: claims?.sub ?? payload.actorId
         });
-        await sampleRepository.saveCustodyEvent(event);
         if (event.action === "received") {
+          const sampleEvent = createDomainEvent({
+            id: randomUUID(), tenantId, type: DomainEventType.SAMPLE_RECEIVED,
+            aggregateId: event.sampleId, payload: event
+          });
+          await saveWithOutbox({
+            unitOfWork, tenantId, aggregateRepository: {
+              save: (aggregate) => sampleRepository.saveCustodyEvent(aggregate),
+              saveInTransaction: (client, aggregate) =>
+                sampleRepository.saveCustodyEventInTransaction(client, aggregate)
+            },
+            aggregate: event, event: sampleEvent, outboxRepository
+          });
           await auditRepository.append(createAuditEvent({
             id: randomUUID(), tenantId, actorId: claims?.sub ?? event.actorId,
             action: "sample.received", resourceType: "sample", resourceId: event.sampleId,
             payload: event
           }));
-          await outboxRepository.save(createDomainEvent({
-            id: randomUUID(), tenantId, type: DomainEventType.SAMPLE_RECEIVED,
-            aggregateId: event.sampleId, payload: event
-          }));
+        } else {
+          await sampleRepository.saveCustodyEvent(event);
         }
         return sendJson(response, 201, event);
       }

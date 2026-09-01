@@ -63,10 +63,17 @@ export class PostgresSampleRepository {
   }
 
   async saveCustodyEvent(event) {
-    const result = await this.#withTenantContext(event.tenantId, (client) => client.query(
+    return this.saveCustodyEventInTransaction(this.#client, event, true);
+  }
+
+  async saveCustodyEventInTransaction(client, event, useTenantContext = false) {
+    const run = (txClient) => txClient.query(
       "INSERT INTO sample_custody_events (id, sample_id, tenant_id, actor_id, action, location, occurred_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, sample_id, tenant_id, actor_id, action, location, occurred_at",
       [event.id, event.sampleId, event.tenantId, event.actorId, event.action, event.location, event.occurredAt]
-    ));
+    );
+    const result = useTenantContext
+      ? await this.#withTenantContext(event.tenantId, run)
+      : await run(client);
     return mapEvent(result.rows[0]);
   }
 

@@ -44,6 +44,15 @@ export class PostgresFinanceRepository {
     return mapEscrow(result.rows[0]);
   }
 
+  async saveInTransaction(client, escrow) {
+    const result = await client.query(
+      "INSERT INTO escrow_transactions (id, tenant_id, payer_id, payee_id, currency, amount, reference_id, status, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (tenant_id, id) DO UPDATE SET status = EXCLUDED.status, updated_at = EXCLUDED.updated_at RETURNING *",
+      [escrow.id, escrow.tenantId, escrow.payerId, escrow.payeeId, escrow.currency,
+        escrow.amount, escrow.referenceId, escrow.status, escrow.createdAt, escrow.updatedAt]
+    );
+    return mapEscrow(result.rows[0]);
+  }
+
   async find(tenantId, id) {
     const result = await this.#withTenantContext(tenantId, (client) => client.query(
       "SELECT * FROM escrow_transactions WHERE tenant_id = $1 AND id = $2", [tenantId, id]

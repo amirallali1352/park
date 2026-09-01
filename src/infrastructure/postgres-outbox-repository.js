@@ -23,6 +23,15 @@ export class PostgresOutboxRepository {
     return mapEvent(result.rows[0]);
   }
 
+  async saveInTransaction(client, event) {
+    const result = await client.query(
+      "INSERT INTO outbox_events (id, tenant_id, event_type, version, aggregate_id, payload, occurred_at, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, tenant_id, event_type, version, aggregate_id, payload, occurred_at, status, published_at",
+      [event.id, event.tenantId, event.type, event.version, event.aggregateId,
+        JSON.stringify(event.payload), event.occurredAt, event.status]
+    );
+    return mapEvent(result.rows[0]);
+  }
+
   async #withTenantContext(tenantId, work) {
     if (typeof this.#client.connect !== "function") {
       await this.#client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);

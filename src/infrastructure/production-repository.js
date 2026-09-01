@@ -12,6 +12,7 @@ import { PostgresFinanceRepository } from "./postgres-finance-repository.js";
 import { PostgresVoucherRepository } from "./postgres-voucher-repository.js";
 import { PostgresCertificationRepository } from "./postgres-certification-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
+import { PostgresUnitOfWork } from "./postgres-unit-of-work.js";
 
 export function createProductionRepository({
   databaseUrl = process.env.DATABASE_URL,
@@ -20,6 +21,7 @@ export function createProductionRepository({
   const pool = createPostgresPool({ Pool, connectionString: databaseUrl });
   return {
     pool,
+    unitOfWork: new PostgresUnitOfWork(pool),
     identity: new PostgresIdentityRepository(pool),
     facility: new PostgresFacilityRepository(pool),
     samples: new PostgresSampleRepository(pool),

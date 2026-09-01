@@ -83,6 +83,11 @@ services:
       - "9200:9200"
     volumes:
       - stp-opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   clickhouse:
     image: clickhouse/clickhouse-server:25.3
@@ -92,6 +97,11 @@ services:
     volumes:
       - stp-clickhouse-data:/var/lib/clickhouse
       - ./db/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8123/ping | grep -q Ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
 volumes:
   stp-postgres-data:

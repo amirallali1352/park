@@ -44,6 +44,15 @@ export class PostgresVoucherRepository {
     return mapVoucher(result.rows[0]);
   }
 
+  async saveInTransaction(client, voucher) {
+    const result = await client.query(
+      "INSERT INTO vouchers (id, tenant_id, beneficiary_id, program, currency, amount, redeemed_amount, status, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (tenant_id, id) DO UPDATE SET redeemed_amount = EXCLUDED.redeemed_amount, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at RETURNING *",
+      [voucher.id, voucher.tenantId, voucher.beneficiaryId, voucher.program, voucher.currency,
+        voucher.amount, voucher.redeemedAmount, voucher.status, voucher.createdAt, voucher.updatedAt]
+    );
+    return mapVoucher(result.rows[0]);
+  }
+
   async find(tenantId, id) {
     const result = await this.#withTenantContext(tenantId, (client) => client.query(
       "SELECT * FROM vouchers WHERE tenant_id = $1 AND id = $2", [tenantId, id]

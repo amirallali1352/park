@@ -67,3 +67,37 @@ test("checks maintenance conflicts before inserting a booking", async () => {
   );
   assert.ok(calls.some((call) => call.text.includes("FROM equipment_maintenance")));
 });
+
+test("persists a booking through an injected transaction client", async () => {
+  const client = clientMock();
+  const repository = new PostgresFacilityRepository(client);
+  const booking = createBooking({
+    id: "b-tx", tenantId: "park-1", equipmentId: "eq-1", userId: "u-1",
+    startAt: "2026-09-01T10:00:00Z", endAt: "2026-09-01T11:00:00Z"
+  });
+  await repository.saveBookingInTransaction(client, booking);
+  assert.match(client.calls[0].text, /INSERT INTO bookings/);
+});
+
+test("persists maintenance through an injected transaction client", async () => {
+  const client = {
+    calls: [],
+    async query(text, values) {
+      this.calls.push({ text, values });
+      return {
+        rows: [{
+          id: values[0], tenant_id: values[1], equipment_id: values[2],
+          maintenance_type: values[3], start_at: values[4], end_at: values[5],
+          notes: values[6], status: values[7]
+        }]
+      };
+    }
+  };
+  const repository = new PostgresFacilityRepository(client);
+  await repository.saveMaintenanceInTransaction(client, {
+    id: "m-tx", tenantId: "park-1", equipmentId: "eq-1", type: "calibration",
+    startAt: "2026-09-02T10:00:00Z", endAt: "2026-09-02T11:00:00Z",
+    notes: "annual", status: "scheduled"
+  });
+  assert.match(client.calls[0].text, /INSERT INTO equipment_maintenance/);
+});
