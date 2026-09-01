@@ -20,6 +20,8 @@ import { buildMerkleProof, merkleRoot } from "../security/merkle.js";
 import { EncryptionError, EnvelopeEncryption } from "../security/encryption.js";
 import { EncryptedFileService } from "../security/encrypted-file-service.js";
 import { InMemoryObjectStorage } from "../infrastructure/in-memory-object-storage.js";
+import { LegalError, createContract, signContract } from "../domain/legal.js";
+import { InMemoryLegalRepository } from "../infrastructure/in-memory-legal-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -68,6 +70,11 @@ function errorResponse(error) {
     const status = error.code === "FILE_NOT_FOUND" ? 404 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof LegalError) {
+    const status = error.code === "LEGAL_WRAPPER_REQUIRED" ? 412 :
+      error.code === "CONTRACT_NOT_FOUND" ? 404 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -86,6 +93,8 @@ export function createApiServer(
     outboxRepository = new InMemoryOutboxRepository(),
     auditRepository = new InMemoryAuditRepository(),
     encryptionKek = process.env.ENCRYPTION_KEK,
+    legalRepository = new InMemoryLegalRepository(),
+    requireLegalWrapper = false,
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -359,6 +368,9 @@ export function createApiServer(
         if (!tenantId) return sendJson(response, 401, {
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
+        if (requireLegalWrapper && !await legalRepository.hasActiveAgreement(tenantId)) {
+          throw new LegalError("An active mNDA or MSA is required before data exchange.", "LEGAL_WRAPPER_REQUIRED");
+        }
         const { objectId, contentType, contentBase64 } = await readJson(request);
         if (typeof contentBase64 !== "string") {
           throw new EncryptionError("contentBase64 is required.", "INVALID_CONTENT");
@@ -376,6 +388,47 @@ export function createApiServer(
           }));
           return metadata;
         }));
+      }
+
+      if (url.pathname === "/api/v1/contracts" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const contract = createContract({ ...(await readJson(request)), tenantId });
+        await legalRepository.save(contract);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "contract.created", resourceType: "contract", resourceId: contract.id,
+          payload: contract
+        }));
+        return sendJson(response, 201, contract);
+      }
+
+      if (url.pathname === "/api/v1/contracts" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await legalRepository.list(tenantId));
+      }
+
+      const contractSignMatch = url.pathname.match(/^\/api\/v1\/contracts\/([^/]+)\/sign$/);
+      if (contractSignMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const contract = await legalRepository.find(tenantId, contractSignMatch[1]);
+        if (!contract) throw new LegalError("Contract was not found.", "CONTRACT_NOT_FOUND");
+        const signed = signContract(contract, await readJson(request));
+        await legalRepository.save(signed);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "contract.signed", resourceType: "contract", resourceId: signed.id,
+          payload: { partyId: signed.signatures.at(-1).partyId, status: signed.status }
+        }));
+        return sendJson(response, 200, signed);
       }
 
       const fileMatch = url.pathname.match(/^\/api\/v1\/files\/([^/]+)$/);

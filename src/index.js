@@ -29,7 +29,9 @@ const server = createApiServer(repositories?.identity, {
   sampleRepository: repositories?.samples,
   outboxRepository: repositories?.outbox,
   auditRepository: repositories?.audit,
+  legalRepository: repositories?.legal,
   fileService,
+  requireLegalWrapper: process.env.REQUIRE_LEGAL_WRAPPER === "true",
   encryptionKek: process.env.ENCRYPTION_KEK
 });
 server.listen(port, "0.0.0.0", () => {
