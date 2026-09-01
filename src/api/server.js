@@ -30,6 +30,8 @@ import { ConsortiumError, createConsortium } from "../domain/consortium.js";
 import { InMemoryConsortiumRepository } from "../infrastructure/in-memory-consortium-repository.js";
 import { EmbeddingError } from "../search/embedding.js";
 import { AnalyticsAggregator } from "../analytics/aggregator.js";
+import { FinanceError, approveEscrow, createEscrow, releaseEscrow } from "../domain/finance.js";
+import { InMemoryFinanceRepository } from "../infrastructure/in-memory-finance-repository.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -96,6 +98,11 @@ function errorResponse(error) {
   if (error instanceof EmbeddingError) {
     return { status: 400, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof FinanceError) {
+    const status = error.code === "ESCROW_NOT_FOUND" ? 404 :
+      error.code === "ESCROW_ALREADY_RELEASED" ? 409 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -123,6 +130,7 @@ export function createApiServer(
     vectorIndex = null,
     analytics = new AnalyticsAggregator(),
     analyticsSink = null,
+    financeRepository = new InMemoryFinanceRepository(),
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
       storage: new InMemoryObjectStorage()
@@ -157,6 +165,50 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         return sendJson(response, 200, analytics.snapshot(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/finance/escrows" && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const escrow = createEscrow({ ...(await readJson(request)), tenantId });
+        await financeRepository.save(escrow);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId: claims?.sub ?? "system",
+          action: "escrow.created", resourceType: "escrow", resourceId: escrow.id,
+          payload: escrow
+        }));
+        return sendJson(response, 201, escrow);
+      }
+
+      if (url.pathname === "/api/v1/finance/escrows" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await financeRepository.list(tenantId));
+      }
+
+      const escrowActionMatch = url.pathname.match(/^\/api\/v1\/finance\/escrows\/([^/]+)\/(approve|release)$/);
+      if (escrowActionMatch && method === "POST") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const escrow = await financeRepository.find(tenantId, escrowActionMatch[1]);
+        if (!escrow) throw new FinanceError("Escrow was not found.", "ESCROW_NOT_FOUND");
+        const actorId = claims?.sub ?? tenantId;
+        const updated = escrowActionMatch[2] === "approve"
+          ? approveEscrow(escrow, { actorId })
+          : releaseEscrow(escrow, { actorId });
+        await financeRepository.save(updated);
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId, actorId,
+          action: `escrow.${escrowActionMatch[2]}d`, resourceType: "escrow",
+          resourceId: updated.id, payload: updated
+        }));
+        return sendJson(response, 200, updated);
       }
 
       if (url.pathname === "/api/v1/tenants" && method === "POST") {
