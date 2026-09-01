@@ -185,11 +185,25 @@ export function createApiServer(
         const valid = user?.passwordHash
           ? await verifyPassword(password, user.passwordHash)
           : false;
-        if (!valid) throw new AuthError("Email or password is invalid.", "INVALID_CREDENTIALS");
+        if (!valid) {
+          if (tenantId && normalizedEmail) {
+            await auditRepository.append(createAuditEvent({
+              id: randomUUID(), tenantId, actorId: normalizedEmail,
+              action: "auth.login.failed", resourceType: "user", resourceId: normalizedEmail,
+              payload: { email: normalizedEmail, reason: "invalid_credentials" }
+            }));
+          }
+          throw new AuthError("Email or password is invalid.", "INVALID_CREDENTIALS");
+        }
         const accessToken = createAccessToken(
           { sub: user.id, tenantId: user.tenantId, role: user.role },
           { secret: authSecret }
         );
+        await auditRepository.append(createAuditEvent({
+          id: randomUUID(), tenantId: user.tenantId, actorId: user.id,
+          action: "auth.login.succeeded", resourceType: "user", resourceId: user.id,
+          payload: { email: user.email }
+        }));
         return sendJson(response, 200, {
           accessToken,
           tokenType: "Bearer",

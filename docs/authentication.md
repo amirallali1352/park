@@ -61,3 +61,9 @@ Authorization: Bearer <accessToken>
 
 این مسیر به Bearer token نیاز دارد و فقط شناسه کاربر، Tenant، نقش و ایمیل موجود
 در JWT را برمی‌گرداند.
+
+## Audit احراز هویت
+
+Login موفق با رویداد `auth.login.succeeded` و Login ناموفق با رویداد
+`auth.login.failed` در زنجیره Audit ثبت می‌شود. Payload فقط شامل ایمیل و علت
+ناموفق‌بودن است و هرگز شامل رمز عبور نیست.
