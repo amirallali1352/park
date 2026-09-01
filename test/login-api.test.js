@@ -36,6 +36,38 @@ test("logs in with email and returns a tenant-scoped JWT", async () => {
   }
 });
 
+test("includes configured audience in the login token", async () => {
+  const repository = new InMemoryIdentityRepository();
+  await repository.saveTenant({ id: "park-1", name: "Park", type: "park" });
+  await repository.saveUser({
+    ...createUser({ id: "admin-1", tenantId: "park-1", email: "admin@park.local", role: "park_admin" }),
+    passwordHash: await hashPassword("Admin-pass-123!")
+  });
+  const server = createApiServer(repository, {
+    authSecret: "test-secret",
+    authAudience: "stp-os-api",
+    authRequired: true
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const login = await fetch(`http://127.0.0.1:${server.address().port}/api/v1/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "admin@park.local", password: "Admin-pass-123!", tenantId: "park-1"
+      })
+    });
+    const { accessToken } = await login.json();
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/v1/auth/me`,
+      { headers: { authorization: `Bearer ${accessToken}` } }
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("rejects invalid login credentials", async () => {
   const repository = new InMemoryIdentityRepository();
   await repository.saveTenant({ id: "park-1", name: "Park", type: "park" });

@@ -78,3 +78,55 @@ test("serves the initial Pilot dashboard shell", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("requires Pilot dashboard login when API authentication is enabled", async () => {
+  const server = createApiServer(undefined, {
+    authRequired: true,
+    authSecret: "pilot-test-secret"
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/v1/pilot/summary`,
+      { headers: { "x-tenant-id": "park-1" } }
+    );
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+      error: { code: "AUTH_REQUIRED", message: "Bearer access token is required." }
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("derives Pilot booking KPIs from persisted bookings after restart", async () => {
+  const server = createApiServer(undefined, {
+    facilityRepository: {
+      async listEquipment() { return []; },
+      async listBookings() {
+        return [{
+          id: "booking-1",
+          startAt: "2026-09-02T10:00:00.000Z",
+          endAt: "2026-09-02T12:30:00.000Z",
+          amount: 450
+        }];
+      }
+    },
+    sampleRepository: { async listSamples() { return []; } }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/v1/pilot/summary`,
+      { headers: { "x-tenant-id": "park-1" } }
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).kpis, {
+      bookingCount: 1,
+      utilizationMinutes: 150,
+      rdSpend: 0
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

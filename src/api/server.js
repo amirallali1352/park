@@ -84,7 +84,9 @@ function pilotDashboardHtml() {
     <h1>STP OS Pilot Dashboard</h1>
     <p class="muted">Equipment, bookings, samples and tenant KPIs.</p>
     <form id="tenant-form">
-      <input id="tenant-id" placeholder="Tenant ID, e.g. park-1" required>
+      <input id="tenant-id" placeholder="Tenant ID, e.g. pilot-park-1" required>
+      <input id="email" type="email" placeholder="Admin email (optional)">
+      <input id="password" type="password" placeholder="Password (optional)">
       <button type="submit">Load Pilot</button>
     </form>
     <p id="message" class="muted">Enter a tenant ID to load data.</p>
@@ -103,10 +105,23 @@ function pilotDashboardHtml() {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const tenantId = document.querySelector("#tenant-id").value.trim();
+      const email = document.querySelector("#email").value.trim();
+      const password = document.querySelector("#password").value;
       message.textContent = "Loading…";
       try {
+        const headers = { "x-tenant-id": tenantId };
+        if (email && password) {
+          const login = await fetch("/api/v1/auth/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ tenantId, email, password })
+          });
+          if (!login.ok) throw new Error("Login failed. Check tenant, email and password.");
+          const loginData = await login.json();
+          headers.authorization = "Bearer " + loginData.accessToken;
+        }
         const response = await fetch("/api/v1/pilot/summary", {
-          headers: { "x-tenant-id": tenantId }
+          headers
         });
         if (!response.ok) throw new Error("Unable to load tenant data.");
         const data = await response.json();
@@ -301,6 +316,11 @@ export function createApiServer(
           sampleRepository.listSamples(tenantId)
         ]);
         const snapshot = analytics.snapshot(tenantId);
+        const persistedBookingCount = bookings.length;
+        const persistedUtilizationMinutes = bookings.reduce((total, booking) => {
+          const duration = new Date(booking.endAt) - new Date(booking.startAt);
+          return total + (Number.isFinite(duration) && duration > 0 ? duration / 60000 : 0);
+        }, 0);
         return sendJson(response, 200, {
           tenantId,
           equipmentCount: equipment.length,
@@ -308,8 +328,8 @@ export function createApiServer(
           bookingCount: bookings.length,
           sampleCount: samples.length,
           kpis: {
-            bookingCount: snapshot.bookingCount,
-            utilizationMinutes: snapshot.utilizationMinutes,
+            bookingCount: Math.max(snapshot.bookingCount, persistedBookingCount),
+            utilizationMinutes: Math.max(snapshot.utilizationMinutes, persistedUtilizationMinutes),
             rdSpend: snapshot.rdSpend
           }
         });
@@ -348,7 +368,13 @@ export function createApiServer(
         }
         if (rateLimitKey) loginRateLimiter.reset(rateLimitKey);
         const accessToken = createAccessToken(
-          { sub: user.id, tenantId: user.tenantId, role: user.role },
+          {
+            sub: user.id,
+            tenantId: user.tenantId,
+            role: user.role,
+            ...(authIssuer ? { iss: authIssuer } : {}),
+            ...(authAudience ? { aud: authAudience } : {})
+          },
           { secret: authSecret }
         );
         await auditRepository.append(createAuditEvent({
