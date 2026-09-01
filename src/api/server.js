@@ -118,6 +118,12 @@ function errorResponse(error) {
   };
 }
 
+function requireRoles(claims, authRequired, roles) {
+  if (authRequired && !roles.includes(claims?.role)) {
+    throw new IdentityError("Role is not allowed for this operation.", "FORBIDDEN");
+  }
+}
+
 export function createApiServer(
   repository = new InMemoryIdentityRepository(),
   {
@@ -215,6 +221,7 @@ export function createApiServer(
       }
 
       if (url.pathname === "/api/v1/finance/escrows" && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
         const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
         if (!tenantId) return sendJson(response, 401, {
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
@@ -242,6 +249,7 @@ export function createApiServer(
       }
 
       if (url.pathname === "/api/v1/finance/vouchers" && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
         const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
         if (!tenantId) return sendJson(response, 401, {
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
@@ -272,6 +280,7 @@ export function createApiServer(
         /^\/api\/v1\/finance\/escrows\/([^/]+)\/apply-voucher$/
       );
       if (voucherApplyMatch && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
         const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
         if (!tenantId) return sendJson(response, 401, {
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
@@ -316,6 +325,7 @@ export function createApiServer(
 
       const escrowActionMatch = url.pathname.match(/^\/api\/v1\/finance\/escrows\/([^/]+)\/(approve|release)$/);
       if (escrowActionMatch && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
         const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
         if (!tenantId) return sendJson(response, 401, {
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
