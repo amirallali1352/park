@@ -19,6 +19,7 @@ export function createProductionRepository({
 } = {}) {
   const pool = createPostgresPool({ Pool, connectionString: databaseUrl });
   return {
+    pool,
     identity: new PostgresIdentityRepository(pool),
     facility: new PostgresFacilityRepository(pool),
     samples: new PostgresSampleRepository(pool),

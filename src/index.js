@@ -6,12 +6,17 @@ import { EnvelopeEncryption } from "./security/encryption.js";
 import { LocalEmbeddingProvider } from "./search/embedding.js";
 import { createVectorSearch } from "./search/create-vector-search.js";
 import { createClickHouseSink } from "./analytics/create-clickhouse-sink.js";
+import { runMigrations } from "./infrastructure/postgres-client.js";
+import { loadMigrations } from "./infrastructure/load-migrations.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const authRequired = process.env.AUTH_REQUIRED === "true";
 const repositories = process.env.DATABASE_URL
   ? createProductionRepository()
   : undefined;
+if (repositories) {
+  await runMigrations(repositories.pool, await loadMigrations());
+}
 const objectStorage = process.env.S3_ENDPOINT
   ? createObjectStorage()
   : undefined;

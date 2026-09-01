@@ -3,9 +3,12 @@ import { createProductionRepository } from "./infrastructure/production-reposito
 import { createRedpandaProducer } from "./infrastructure/create-redpanda-producer.js";
 import { RedpandaEventBus } from "./infrastructure/redpanda-event-bus.js";
 import { OutboxWorker } from "./infrastructure/outbox-worker.js";
+import { runMigrations } from "./infrastructure/postgres-client.js";
+import { loadMigrations } from "./infrastructure/load-migrations.js";
 
 const intervalMs = Number(process.env.OUTBOX_POLL_INTERVAL_MS ?? 5000);
 const repositories = createProductionRepository();
+await runMigrations(repositories.pool, await loadMigrations());
 const producer = createRedpandaProducer({ Kafka });
 const eventBus = new RedpandaEventBus(producer);
 const worker = new OutboxWorker({
