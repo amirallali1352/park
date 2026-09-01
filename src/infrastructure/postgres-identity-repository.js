@@ -53,10 +53,13 @@ export class PostgresIdentityRepository {
   }
 
   async saveUser(user) {
-    const result = await this.#withTenantContext(user.tenantId, (client) => client.query(
-        "INSERT INTO users (id, tenant_id, email, role) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role RETURNING id, tenant_id, email, role",
-        [user.id, user.tenantId, user.email, user.role]
-      ));
+    const query = user.passwordHash
+      ? "INSERT INTO users (id, tenant_id, email, role, password_hash) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role, password_hash = EXCLUDED.password_hash RETURNING id, tenant_id, email, role"
+      : "INSERT INTO users (id, tenant_id, email, role) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, role = EXCLUDED.role RETURNING id, tenant_id, email, role";
+    const values = user.passwordHash
+      ? [user.id, user.tenantId, user.email, user.role, user.passwordHash]
+      : [user.id, user.tenantId, user.email, user.role];
+    const result = await this.#withTenantContext(user.tenantId, (client) => client.query(query, values));
     return mapUser(result.rows[0]);
   }
 
@@ -67,5 +70,14 @@ export class PostgresIdentityRepository {
         [tenantId]
       ));
     return result.rows.map(mapUser);
+  }
+
+  async findUserByEmail(email, tenantId) {
+    const result = await this.#withTenantContext(tenantId, (client) => client.query(
+      "SELECT id, tenant_id, email, role, password_hash FROM users WHERE tenant_id = $1 AND email = $2",
+      [tenantId, email.toLowerCase()]
+    ));
+    if (!result.rows[0]) return null;
+    return { ...mapUser(result.rows[0]), passwordHash: result.rows[0].password_hash };
   }
 }

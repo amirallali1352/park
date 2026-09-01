@@ -14,6 +14,8 @@ import { InMemorySampleRepository } from "../infrastructure/in-memory-sample-rep
 import { createDomainEvent, DomainEventType } from "../domain/outbox.js";
 import { InMemoryOutboxRepository } from "../infrastructure/in-memory-outbox-repository.js";
 import { AuthError, bearerToken, verifyAccessToken } from "../security/auth.js";
+import { createAccessToken } from "../security/auth.js";
+import { hashPassword, verifyPassword } from "../security/password.js";
 import { AuditError, createAuditEvent } from "../security/audit.js";
 import { InMemoryAuditRepository } from "../infrastructure/in-memory-audit-repository.js";
 import { buildMerkleProof, merkleRoot } from "../security/merkle.js";
@@ -150,7 +152,8 @@ export function createApiServer(
     try {
       const url = new URL(request.url, "http://localhost");
       const method = request.method ?? "GET";
-      const protectedRoute = url.pathname.startsWith("/api/v1/");
+      const protectedRoute = url.pathname.startsWith("/api/v1/") &&
+        url.pathname !== "/api/v1/auth/login";
       let claims = null;
 
       if (authRequired && protectedRoute) {
@@ -165,6 +168,30 @@ export function createApiServer(
 
       if (method === "GET" && url.pathname === "/health") {
         return sendJson(response, 200, { status: "ok", service: "stp-os" });
+      }
+
+      if (url.pathname === "/api/v1/auth/login" && method === "POST") {
+        const { email, password, tenantId } = await readJson(request);
+        const normalizedEmail = email?.toLowerCase();
+        const user = normalizedEmail && tenantId
+          ? await repository.findUserByEmail(normalizedEmail, tenantId)
+          : null;
+        const valid = user?.passwordHash
+          ? await verifyPassword(password, user.passwordHash)
+          : false;
+        if (!valid) throw new AuthError("Email or password is invalid.", "INVALID_CREDENTIALS");
+        const accessToken = createAccessToken(
+          { sub: user.id, tenantId: user.tenantId, role: user.role },
+          { secret: authSecret }
+        );
+        return sendJson(response, 200, {
+          accessToken,
+          tokenType: "Bearer",
+          expiresIn: 3600,
+          user: {
+            id: user.id, tenantId: user.tenantId, email: user.email, role: user.role
+          }
+        });
       }
 
       if (url.pathname === "/api/v1/analytics/kpis" && method === "GET") {
@@ -320,8 +347,11 @@ export function createApiServer(
           });
         }
         if (claims) assertTenantAccess(claims, tenantId);
-        const user = createUser({ ...(await readJson(request)), tenantId });
-        await repository.saveUser(user);
+        const payload = await readJson(request);
+        const user = createUser({ ...payload, tenantId });
+        const passwordHash = payload.password ? await hashPassword(payload.password) : undefined;
+        const storedUser = passwordHash ? { ...user, passwordHash } : user;
+        await repository.saveUser(storedUser);
         return sendJson(response, 201, user);
       }
 

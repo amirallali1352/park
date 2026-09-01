@@ -61,6 +61,9 @@ Migration `db/003_samples.sql` جدول‌های `samples` و `sample_custody_ev
 
 ## احراز هویت
 
+Login ایمیل/رمز عبور در `POST /api/v1/auth/login` با هش `scrypt` و JWT انجام
+می‌شود. راهنمای کامل در `docs/authentication.md` قرار دارد.
+
 برای محیط توسعه می‌توان احراز هویت Bearer را فعال کرد:
 
 ```powershell

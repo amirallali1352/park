@@ -12,8 +12,12 @@ CREATE TABLE IF NOT EXISTS users (
   tenant_id TEXT NOT NULL REFERENCES tenants(id),
   email TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('park_admin', 'tenant_admin', 'member')),
+  password_hash TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_email_idx ON users (tenant_id, lower(email));
 
 CREATE INDEX IF NOT EXISTS users_tenant_id_idx ON users (tenant_id);
 

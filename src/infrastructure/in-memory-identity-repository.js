@@ -17,6 +17,13 @@ export class InMemoryIdentityRepository {
     return user;
   }
 
+  findUserByEmail(email, tenantId) {
+    const normalizedEmail = email?.toLowerCase();
+    return [...this.#users.values()].find((user) =>
+      user.tenantId === tenantId && user.email === normalizedEmail
+    ) ?? null;
+  }
+
   findTenantForUser(user, tenantId) {
     assertTenantAccess(user, tenantId);
     return this.#tenants.get(tenantId) ?? null;
