@@ -13,6 +13,7 @@
     "db:backup": "node scripts/postgres-backup.mjs backup",
     "db:restore": "node scripts/postgres-backup.mjs restore",
     "db:verify": "node scripts/postgres-backup.mjs verify",
+    "perf:smoke": "node scripts/performance-smoke.mjs",
     "pilot:seed": "node scripts/seed-pilot.js"
   },
   "dependencies": {
