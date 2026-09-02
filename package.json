@@ -12,6 +12,7 @@
     "db:up": "docker compose up -d postgres",
     "db:backup": "node scripts/postgres-backup.mjs backup",
     "db:restore": "node scripts/postgres-backup.mjs restore",
+    "db:verify": "node scripts/postgres-backup.mjs verify",
     "pilot:seed": "node scripts/seed-pilot.js"
   },
   "dependencies": {

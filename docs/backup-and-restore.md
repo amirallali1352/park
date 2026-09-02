@@ -21,6 +21,13 @@ Restore is intentionally destructive and requires an explicit confirmation flag:
 npm run db:restore -- backups/pilot-before-migration.sql --confirm
 ```
 
+Verify a backup by restoring it into a temporary database and checking the
+critical tables. The temporary database is removed after verification:
+
+```powershell
+npm run db:verify -- backups/pilot-before-migration.sql
+```
+
 Backups are plain SQL files and should be encrypted and copied to an external
 WORM/object-storage target in the production environment. Always verify a
 restore in an isolated PostgreSQL database before using it for recovery.

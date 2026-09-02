@@ -9,6 +9,11 @@ export function backupFileName(date = new Date()) {
   return `stp-os-${iso.slice(0, 8)}-${iso.slice(9, 15)}Z.sql`;
 }
 
+export function verificationDatabaseName(date = new Date()) {
+  const iso = date.toISOString().replace(/[-:]/g, "").replace(".000Z", "Z");
+  return `stp_os_verify_${iso.slice(0, 8)}_${iso.slice(9, 15)}`;
+}
+
 export function buildBackupCommand() {
   return [
     "compose", "exec", "-T", "postgres", "pg_dump",
@@ -17,14 +22,30 @@ export function buildBackupCommand() {
   ];
 }
 
-export function buildRestoreCommand(filePath, confirmed = false) {
+export function buildRestoreCommand(filePath, confirmed = false, database = "stp_os") {
   if (!confirmed) {
     throw new Error("Restore is destructive. Re-run with --confirm.");
   }
   if (!filePath) throw new Error("A backup file path is required.");
   return [
     "compose", "exec", "-T", "postgres", "psql",
-    "--username=stp_os", "--dbname=stp_os", "--set=ON_ERROR_STOP=1"
+    "--username=stp_os", `--dbname=${database}`, "--set=ON_ERROR_STOP=1"
+  ];
+}
+
+export function buildCreateDatabaseCommand(database) {
+  return ["compose", "exec", "-T", "postgres", "createdb", "--username=stp_os", database];
+}
+
+export function buildDropDatabaseCommand(database) {
+  return ["compose", "exec", "-T", "postgres", "dropdb", "--username=stp_os", database];
+}
+
+export function buildVerifyQueryCommand(database) {
+  return [
+    "compose", "exec", "-T", "postgres", "psql", "--username=stp_os",
+    `--dbname=${database}`, "--tuples-only", "--no-align",
+    "--command=SELECT to_regclass('public.tenants'), to_regclass('public.outbox_events');"
   ];
 }
 
@@ -51,6 +72,20 @@ async function main() {
     await runProcess(buildRestoreCommand(filePath, flags.includes("--confirm")), 
       (await import("node:fs")).createReadStream(filePath));
     console.log(`PostgreSQL restore completed from ${basename(filePath)}.`);
+    return;
+  }
+  if (mode === "verify") {
+    const filePath = resolve(fileArgument ?? "");
+    const database = verificationDatabaseName();
+    try {
+      await runProcess(buildCreateDatabaseCommand(database));
+      await runProcess(buildRestoreCommand(filePath, true, database),
+        (await import("node:fs")).createReadStream(filePath));
+      await runProcess(buildVerifyQueryCommand(database));
+      console.log(`PostgreSQL backup verified in temporary database ${database}.`);
+    } finally {
+      await runProcess(buildDropDatabaseCommand(database)).catch(() => {});
+    }
     return;
   }
   const output = resolve(fileArgument ?? `backups/${backupFileName()}`);
