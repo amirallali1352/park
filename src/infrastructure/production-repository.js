@@ -11,6 +11,7 @@ import { PostgresConsortiumRepository } from "./postgres-consortium-repository.j
 import { PostgresFinanceRepository } from "./postgres-finance-repository.js";
 import { PostgresVoucherRepository } from "./postgres-voucher-repository.js";
 import { PostgresCertificationRepository } from "./postgres-certification-repository.js";
+import { PostgresBillingRepository } from "./postgres-billing-repository.js";
 import { createPostgresPool } from "./postgres-client.js";
 import { PostgresUnitOfWork } from "./postgres-unit-of-work.js";
 
@@ -33,6 +34,7 @@ export function createProductionRepository({
     consortium: new PostgresConsortiumRepository(pool),
     finance: new PostgresFinanceRepository(pool),
     voucher: new PostgresVoucherRepository(pool),
-    certification: new PostgresCertificationRepository(pool)
+    certification: new PostgresCertificationRepository(pool),
+    billing: new PostgresBillingRepository(pool)
   };
 }
