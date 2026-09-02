@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  assertPerformanceBudget,
   buildBookingPayload,
   operationalScenarioNames,
   summarizeScenario
@@ -36,4 +37,31 @@ test("summarizes an operational scenario with pass rate", () => {
     p50Ms: 20,
     p95Ms: 30
   });
+});
+
+test("rejects an operational report that violates the Pilot performance budget", () => {
+  const report = {
+    scenarios: {
+      login: { errors: 0, p95Ms: 501 },
+      equipment: { errors: 0, p95Ms: 10 },
+      booking: { errors: 0, p95Ms: 10 },
+      dashboard: { errors: 0, p95Ms: 10 }
+    }
+  };
+  assert.throws(
+    () => assertPerformanceBudget(report),
+    /login p95 501ms exceeds 500ms/
+  );
+});
+
+test("accepts an operational report inside the Pilot performance budget", () => {
+  const report = {
+    scenarios: {
+      login: { errors: 0, p95Ms: 100 },
+      equipment: { errors: 0, p95Ms: 100 },
+      booking: { errors: 0, p95Ms: 100 },
+      dashboard: { errors: 0, p95Ms: 100 }
+    }
+  };
+  assert.equal(assertPerformanceBudget(report), true);
 });

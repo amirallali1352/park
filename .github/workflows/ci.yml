@@ -40,3 +40,15 @@ jobs:
 
       - name: Run test suite
         run: npm test
+
+      - name: Start API for operational performance check
+        run: |
+          AUTH_SECRET=stp-os-ci-secret-2026 npm start > /tmp/stp-os-api.log 2>&1 &
+          sleep 2
+
+      - name: Run operational performance check
+        env:
+          AUTH_SECRET: stp-os-ci-secret-2026
+          OPERATIONS_TOTAL: 10
+          OPERATIONS_CONCURRENCY: 2
+        run: npm run perf:operations

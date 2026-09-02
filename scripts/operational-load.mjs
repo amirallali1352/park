@@ -34,6 +34,23 @@ export function summarizeScenario(latencies, errors = 0) {
   };
 }
 
+export function assertPerformanceBudget(report, budget = {
+  login: 500,
+  equipment: 500,
+  booking: 500,
+  dashboard: 500
+}) {
+  for (const scenario of operationalScenarioNames()) {
+    const result = report.scenarios?.[scenario];
+    if (!result) throw new Error(`${scenario} result is missing`);
+    if (result.errors > 0) throw new Error(`${scenario} has ${result.errors} errors`);
+    if (result.p95Ms > budget[scenario]) {
+      throw new Error(`${scenario} p95 ${result.p95Ms}ms exceeds ${budget[scenario]}ms`);
+    }
+  }
+  return true;
+}
+
 async function requestJson(baseUrl, path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
@@ -130,6 +147,7 @@ async function main() {
     return response.ok;
   });
 
+  assertPerformanceBudget(report);
   console.log(JSON.stringify(report, null, 2));
 }
 

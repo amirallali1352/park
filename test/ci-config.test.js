@@ -12,6 +12,7 @@ test("GitHub Actions CI runs the locked dependency install and full test suite",
   assert.match(workflow, /actions\/setup-node@v\d/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm test/);
+  assert.match(workflow, /npm run perf:operations/);
 });
 
 test("GitHub Actions CI validates Docker Compose configuration", async () => {
