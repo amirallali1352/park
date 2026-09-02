@@ -39,6 +39,9 @@ import { VoucherError, applyVoucher, createVoucher } from "../domain/voucher.js"
 import { InMemoryVoucherRepository } from "../infrastructure/in-memory-voucher-repository.js";
 import { CertificationError, createCertification, isCertificationValid } from "../domain/certification.js";
 import { InMemoryCertificationRepository } from "../infrastructure/in-memory-certification-repository.js";
+import { BillingError, createInvoice, createSubscription, markInvoicePaid } from "../domain/billing.js";
+import { InMemoryBillingRepository } from "../infrastructure/in-memory-billing-repository.js";
+import { MemoryPaymentProvider } from "../infrastructure/memory-payment-provider.js";
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -323,6 +326,11 @@ function errorResponse(error) {
     const status = error.code === "CERTIFICATION_REQUIRED" ? 403 : 400;
     return { status, body: { error: { code: error.code, message: error.message } } };
   }
+  if (error instanceof BillingError) {
+    const status = ["INVOICE_NOT_FOUND", "SUBSCRIPTION_NOT_FOUND"].includes(error.code) ? 404 :
+      ["INVOICE_NOT_OPEN", "INVALID_PAYMENT"].includes(error.code) ? 409 : 400;
+    return { status, body: { error: { code: error.code, message: error.message } } };
+  }
   return {
     status: 500,
     body: { error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." } }
@@ -378,6 +386,8 @@ export function createApiServer(
     voucherRepository = new InMemoryVoucherRepository(),
     unitOfWork = null,
     certificationRepository = new InMemoryCertificationRepository(),
+    billingRepository = new InMemoryBillingRepository(),
+    paymentProvider = new MemoryPaymentProvider(),
     loginRateLimit = {},
     fileService = encryptionKek ? new EncryptedFileService({
       encryption: new EnvelopeEncryption({ kek: encryptionKek }),
@@ -562,6 +572,68 @@ export function createApiServer(
           error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
         });
         return sendJson(response, 200, analytics.snapshot(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/billing/subscriptions" && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const subscription = createSubscription({ ...(await readJson(request)), tenantId });
+        await billingRepository.saveSubscription(subscription);
+        return sendJson(response, 201, subscription);
+      }
+
+      if (url.pathname === "/api/v1/billing/subscriptions" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await billingRepository.listSubscriptions(tenantId));
+      }
+
+      if (url.pathname === "/api/v1/billing/invoices" && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const payload = await readJson(request);
+        const subscription = await billingRepository.findSubscription(tenantId, payload.subscriptionId);
+        if (!subscription) throw new BillingError("Subscription was not found.", "SUBSCRIPTION_NOT_FOUND");
+        const invoice = createInvoice({
+          ...payload, tenantId, amount: subscription.amount, currency: subscription.currency
+        });
+        await billingRepository.saveInvoice(invoice);
+        return sendJson(response, 201, invoice);
+      }
+
+      if (url.pathname === "/api/v1/billing/invoices" && method === "GET") {
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        return sendJson(response, 200, await billingRepository.listInvoices(tenantId));
+      }
+
+      const payInvoiceMatch = url.pathname.match(/^\/api\/v1\/billing\/invoices\/([^/]+)\/pay$/);
+      if (payInvoiceMatch && method === "POST") {
+        requireRoles(claims, authRequired, ["park_admin", "tenant_admin"]);
+        const tenantId = claims?.tenantId ?? request.headers["x-tenant-id"];
+        if (!tenantId) return sendJson(response, 401, {
+          error: { code: "TENANT_CONTEXT_REQUIRED", message: "x-tenant-id header is required." }
+        });
+        const invoice = await billingRepository.findInvoice(tenantId, payInvoiceMatch[1]);
+        if (!invoice) throw new BillingError("Invoice was not found.", "INVOICE_NOT_FOUND");
+        const payment = await paymentProvider.createPayment({
+          tenantId, invoiceId: invoice.id, amount: invoice.amount, currency: invoice.currency
+        });
+        const paidInvoice = markInvoicePaid(invoice, {
+          provider: payment.provider, paymentId: payment.id
+        });
+        await billingRepository.saveInvoice(paidInvoice);
+        return sendJson(response, 200, { invoice: paidInvoice, payment });
       }
 
       if (url.pathname === "/api/v1/finance/escrows" && method === "POST") {

@@ -8,6 +8,7 @@ import { createVectorSearch } from "./search/create-vector-search.js";
 import { createClickHouseSink } from "./analytics/create-clickhouse-sink.js";
 import { runMigrations } from "./infrastructure/postgres-client.js";
 import { loadMigrations } from "./infrastructure/load-migrations.js";
+import { createPaymentProvider } from "./infrastructure/create-payment-provider.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const authRequired = process.env.AUTH_REQUIRED === "true";
@@ -54,6 +55,7 @@ const readinessChecks = {
     }
   } : {})
 };
+const paymentProvider = createPaymentProvider();
 const server = createApiServer(repositories?.identity, {
   authRequired,
   authSecret: process.env.AUTH_SECRET,
@@ -69,6 +71,8 @@ const server = createApiServer(repositories?.identity, {
   financeRepository: repositories?.finance,
   voucherRepository: repositories?.voucher,
   certificationRepository: repositories?.certification,
+  billingRepository: repositories?.billing,
+  paymentProvider,
   unitOfWork: repositories?.unitOfWork,
   embeddingProvider,
   vectorIndex,
