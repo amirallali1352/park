@@ -21,6 +21,20 @@ test("health endpoint reports the API is running", async () => {
   });
 });
 
+test("API responses include security headers and a request ID", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/health`);
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("x-request-id"), /^[0-9a-f-]{36}$/);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.match(response.headers.get("content-security-policy"), /default-src 'self'/);
+    assert.match(response.headers.get("permissions-policy"), /camera=\(\)/);
+  });
+});
+
 test("readiness endpoint reports dependency status", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/ready`);

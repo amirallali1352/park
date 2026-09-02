@@ -48,6 +48,21 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+function applySecurityHeaders(response) {
+  response.setHeader("x-request-id", randomUUID());
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("x-frame-options", "DENY");
+  response.setHeader("referrer-policy", "no-referrer");
+  response.setHeader(
+    "content-security-policy",
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+  );
+  response.setHeader(
+    "permissions-policy",
+    "camera=(), microphone=(), geolocation=()"
+  );
+}
+
 function sendHtml(response, status, body) {
   response.writeHead(status, {
     "content-type": "text/html; charset=utf-8",
@@ -376,6 +391,7 @@ export function createApiServer(
   const encryption = encryptionKek ? new EnvelopeEncryption({ kek: encryptionKek }) : null;
   let requestCount = 0;
   return createServer(async (request, response) => {
+    applySecurityHeaders(response);
     requestCount += 1;
     try {
       const url = new URL(request.url, "http://localhost");
