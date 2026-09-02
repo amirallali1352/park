@@ -10,6 +10,8 @@
     "start": "node src/index.js",
     "start:worker": "node src/worker.js",
     "db:up": "docker compose up -d postgres",
+    "db:backup": "node scripts/postgres-backup.mjs backup",
+    "db:restore": "node scripts/postgres-backup.mjs restore",
     "pilot:seed": "node scripts/seed-pilot.js"
   },
   "dependencies": {
