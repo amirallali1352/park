@@ -32,3 +32,14 @@ test("GitHub Actions CI includes dependency auditing", async () => {
 
   assert.match(workflow, /npm audit --audit-level=high/);
 });
+
+test("GitHub Actions CI runs the Docker-backed integration path", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(workflow, /docker compose up -d postgres redpanda minio opensearch clickhouse/);
+  assert.match(workflow, /RUN_INTEGRATION:\s*true/);
+  assert.match(workflow, /test\/docker-integration\.test\.js/);
+});
